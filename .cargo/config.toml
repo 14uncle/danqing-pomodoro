@@ -1,0 +1,13 @@
+# 项目构建配置(windows-gnu 工具链)。
+#
+# 背景(2026-07-16 环境排障结论):
+# 1. 本机未安装 Visual Studio Build Tools,使用 stable-x86_64-pc-windows-gnu
+#    (rustup override 已设置)。msvc 环境下本配置无副作用。
+# 2. rustc 为 windows-* crate 的 raw-dylib 导入生成导入库时,调用 PATH 上的
+#    dlltool.exe;rustup 自带的 dlltool 依赖缺失的 GNU as 无法工作。
+#    已从 MSYS2(清华 TUNA 镜像)安装真正的 binutils(as.exe + dlltool.exe)
+#    到 ~/.cargo/bin。必须使用 GNU 原版 dlltool:自研 shim(lld 格式)产出的
+#    导入对象与 GNU 格式混排时,重复 DLL 描述符无法被 GNU ld 合并,会导致
+#    部分导入 IAT 未填充、进程首次调用该导入即崩溃。
+#
+# 当前不需要额外 rustflags;诊断工具见 tools/ 与 README.md「开发环境」。

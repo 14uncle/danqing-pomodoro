@@ -1,0 +1,35 @@
+[package]
+name = "danqing-pomodoro"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "丹青番茄钟 —— 专注陪伴的沉浸世界"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+danqing = { path = "../danqing" }
+chrono = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "5"
+rodio = { version = "0.22", default-features = false, features = ["playback", "symphonia-ogg", "symphonia-vorbis"] }
+log = "0.4"
+env_logger = "0.11"
+anyhow = "1"
+windows-sys = { version = "0.59", features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_System_Diagnostics_Debug"] }
+
+[build-dependencies]
+winresource = "0.1"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = "z"
+panic = "abort"
+strip = "debuginfo"

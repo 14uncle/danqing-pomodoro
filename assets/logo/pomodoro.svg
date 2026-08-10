@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>番茄钟 Pomodoro Logo</title>
+  <desc>丹青番茄钟: jade bezel ring, cinnabar hands at 11:15 — minute hand at 3 o'clock, hour hand at 11 with quarter-hour offset.</desc>
+
+  <!-- 玉色外环: 几何居中 -->
+  <circle cx="128" cy="128" r="90" fill="none" stroke="#0F766E" stroke-width="20"/>
+
+  <!-- 分针 (长细, 3 点钟 = 15 分): 轴心下移; 缩至 x2=188 留出足够间隙缩放到 16px 仍可见 -->
+  <line x1="128" y1="140" x2="188" y2="140" stroke="#E34234" stroke-width="7" stroke-linecap="round"/>
+
+  <!-- 时针 (短粗, 11 点过 1/4 = 22.5° 左偏): 轴心下移 -->
+  <line x1="128" y1="140" x2="108.9" y2="93.8" stroke="#E34234" stroke-width="11" stroke-linecap="round"/>
+
+  <!-- 轴心 -->
+  <circle cx="128" cy="140" r="9" fill="#E34234"/>
+</svg>
