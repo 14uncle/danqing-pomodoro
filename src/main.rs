@@ -1269,8 +1269,7 @@ fn report_header(t: SceneTheme) -> impl widget::Widget {
                     Text::new("年度报告")
                         .font_size(t.font_size_heading())
                         .bind_color(|s: &PomodoroApp| s.palette().text_primary),
-                )
-                .child(UiBox::new(Color::TRANSPARENT)),
+                ),
         ))
         .child(
             UiBox::new(Color::TRANSPARENT)
