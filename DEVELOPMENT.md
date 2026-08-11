@@ -44,7 +44,7 @@ danqing = { path = "../danqing" }
 
 ```toml
 [dependencies]
-danqing = { git = "https://github.com/GANWEIHUN/danqing" }
+danqing = { git = "https://github.com/14uncle/danqing" }
 ```
 
 - 用户 `git clone` 时用 `--recursive` 拉取子模块

@@ -15,17 +15,17 @@
 
 ## 下载
 
-从 [Releases](https://github.com/GANWEIHUN/danqing-pomodoro/releases) 下载最新版本。
+从 [Releases](https://github.com/14uncle/danqing-pomodoro/releases) 下载最新版本。
 
 解压后双击 `danqing-pomodoro.exe` 即可运行。
 
 ## 构建
 
-需要 Rust 1.85+ 和 [danqing](https://github.com/GANWEIHUN/danqing) 框架。
+需要 Rust 1.85+ 和 [danqing](https://github.com/14uncle/danqing) 框架。
 
 ```bash
 # 克隆
-git clone --recursive https://github.com/GANWEIHUN/danqing-pomodoro.git
+git clone --recursive https://github.com/14uncle/danqing-pomodoro.git
 cd danqing-pomodoro
 
 # 构建
@@ -53,7 +53,7 @@ cargo run --release
 
 ## 反馈
 
-遇到问题或有建议？请到 [Issues](https://github.com/GANWEIHUN/danqing-pomodoro/issues) 提交。
+遇到问题或有建议？请到 [Issues](https://github.com/14uncle/danqing-pomodoro/issues) 提交。
 
 ## 开发
 
@@ -61,7 +61,7 @@ cargo run --release
 
 ## 技术栈
 
-- **UI 框架**: [danqing](https://github.com/GANWEIHUN/danqing) — Rust 跨平台自绘 UI
+- **UI 框架**: [danqing](https://github.com/14uncle/danqing) — Rust 跨平台自绘 UI
 - **渲染**: wgpu (D3D12/Vulkan/Metal)
 - **窗口**: winit 0.30
 - **字体**: fontdue + font-kit
