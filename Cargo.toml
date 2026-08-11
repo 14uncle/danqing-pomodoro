@@ -7,7 +7,7 @@ description = "丹青番茄钟 —— 专注陪伴的沉浸世界"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-danqing = { path = "../danqing" }
+danqing = { git = "https://github.com/GANWEIHUN/danqing" }
 chrono = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
