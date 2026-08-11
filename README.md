@@ -1,17 +1,17 @@
 # 丹青番茄钟
 
-专注陪伴的沉浸世界 —— 9 个手绘场景 × 动效 × 环境音,让专注不再是忍耐。
+专注陪伴的沉浸世界 —— 9 个手绘场景 × 动效 × 环境音，让专注不再是忍耐。
 
 ![场景预览](assets/scenes/bonfire.png)
 
 ## 功能
 
 - **9 个沉浸场景**: 篝火、海、雨、山、森林、铁匠铺、洞穴、夜市、火车
-- **场景动效**: 每个场景独立 shader 动画(火焰呼吸、海浪、雨丝、星空、金属反光...)
-- **环境音**: 程序化生成的场景音效,交叉淡化切换
-- **专注计时**: 25/5/15 经典番茄钟,支持自定义时长
+- **场景动效**: 每个场景独立 shader 动画 (火焰呼吸、海浪、雨丝、金属反光...)
+- **环境音**: 程序化生成的场景音效，交叉淡化切换
+- **专注计时**: 25/5/15 经典番茄钟，支持自定义时长
 - **数据统计**: 今日/本周/累计专注时长,年度报告深度洞察
-- **数据导出**: CSV/JSON 明文导出,本地存储,你的数据你做主
+- **数据导出**: CSV/JSON 明文导出，本地存储，你的数据你做主
 
 ## 下载
 
@@ -46,14 +46,18 @@ cargo run --release
 
 ## 数据存储
 
-专注记录保存在:
+专注记录保存在：
 - **Windows**: `%APPDATA%/danqing/focus-history.json`
 - **macOS**: `~/Library/Application Support/danqing/focus-history.json`
 - **Linux**: `~/.config/danqing/focus-history.json`
 
 ## 反馈
 
-遇到问题或有建议?请到 [Issues](https://github.com/GANWEIHUN/danqing-pomodoro/issues) 提交。
+遇到问题或有建议？请到 [Issues](https://github.com/GANWEIHUN/danqing-pomodoro/issues) 提交。
+
+## 开发
+
+详见 [DEVELOPMENT.md](DEVELOPMENT.md) —— 依赖机制、构建流程、打包指南。
 
 ## 技术栈
 
