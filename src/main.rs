@@ -176,6 +176,8 @@ enum Msg {
     ExportCsv,
     /// 打开导出 CSV 所在目录 (已导出过时可用)。
     OpenExportDir,
+    /// 打开 GitHub Issues 反馈页面 (预填标题前缀 + 版本 + OS)。
+    OpenFeedback,
 }
 
 impl PomodoroApp {
@@ -499,6 +501,7 @@ impl App for PomodoroApp {
                     }
                 }
             }
+            Msg::OpenFeedback => open_feedback(),
         }
     }
 
@@ -983,6 +986,7 @@ fn settings_panel(t: SceneTheme) -> impl widget::Widget {
                         ))
                         .child(sound_setting_row(t))
                         .child(ghost_button(t, "重置计时", Msg::ResetConfig))
+                        .child(ghost_button(t, "问题反馈", Msg::OpenFeedback))
                         .child(
                             Text::new("变更在下一阶段生效")
                                 .font_size(t.font_size_small())
@@ -1207,6 +1211,25 @@ fn reveal_attempt(path: &std::path::Path) -> std::io::Result<std::process::Child
         ));
     };
     std::process::Command::new("xdg-open").arg(dir).spawn()
+}
+
+/// 打开 GitHub Issues 反馈页面：预填标题前缀 + 应用版本 + 操作系统信息。
+/// 用户补充内容后直接提交，无需手动填写环境信息。
+fn open_feedback() {
+    let version = env!("CARGO_PKG_VERSION");
+    let os = std::env::consts::OS;
+    let arch = std::env::consts::ARCH;
+    let title = urlencoding::encode("[Bug] ");
+    let body_raw = format!(
+        "**应用版本:** {version}\n**操作系统:** {os} ({arch})\n\n**问题描述:**\n\n\n**复现步骤:**\n1. \n2. \n3. "
+    );
+    let body = urlencoding::encode(&body_raw);
+    let url = format!(
+        "https://github.com/14uncle/danqing-pomodoro/issues/new?title={title}&labels=bug&body={body}"
+    );
+    if let Err(err) = open::that(&url) {
+        log::warn!("打开反馈页面失败：{err}");
+    }
 }
 
 /// 当前本地年份 (年度报告按年聚合的锚)。
