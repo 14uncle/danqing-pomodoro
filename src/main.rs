@@ -1286,13 +1286,11 @@ fn report_header(t: SceneTheme) -> impl widget::Widget {
     Row::new()
         .cross_stretch()
         .child(Center::new(
-            Row::new()
-                .gap(t.spacing_sm())
-                .child(
-                    Text::new("年度报告")
-                        .font_size(t.font_size_heading())
-                        .bind_color(|s: &PomodoroApp| s.palette().text_primary),
-                ),
+            Row::new().gap(t.spacing_sm()).child(
+                Text::new("年度报告")
+                    .font_size(t.font_size_heading())
+                    .bind_color(|s: &PomodoroApp| s.palette().text_primary),
+            ),
         ))
         .child(
             UiBox::new(Color::TRANSPARENT)
