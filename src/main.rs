@@ -1401,6 +1401,8 @@ fn run() -> anyhow::Result<()> {
         logo_name: "pomodoro".into(),
         // 专注陪伴型工具：启动即全屏沉浸 (场景大图为主角), 最大化契合视觉契约。
         maximized: true,
+        // 番茄钟需要持续渲染：隐藏态仍保持 tick 推进 (计时器/音频/场景动效)。
+        mode: danqing::WindowMode::Continuous,
         ..WindowConfig::default()
     };
     danqing::run_app(config, &mut app)?;
