@@ -631,7 +631,7 @@ checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 [[package]]
 name = "danqing"
 version = "0.1.0"
-source = "git+https://github.com/14uncle/danqing#8a0683f09260a2b6b855c4f587488e689cac76cb"
+source = "git+https://github.com/14uncle/danqing#5d161f98be5481c45dd7ca181af8e4086378adf2"
 dependencies = [
  "arboard",
  "bytemuck",
@@ -3871,7 +3871,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
