@@ -21,11 +21,11 @@
 
 ## 构建
 
-需要 Rust 1.85+ 和 [danqing](https://github.com/14uncle/danqing) 框架。
+需要 Rust 1.85+。[danqing](https://github.com/14uncle/danqing) 框架经 git 依赖自动拉取，无需手动安装。
 
 ```bash
 # 克隆
-git clone --recursive https://github.com/14uncle/danqing-pomodoro.git
+git clone https://github.com/14uncle/danqing-pomodoro.git
 cd danqing-pomodoro
 
 # 构建

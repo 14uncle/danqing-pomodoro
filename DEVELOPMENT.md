@@ -28,28 +28,30 @@ danqing-pomodoro/
 
 本项目通过 `Cargo.toml` 声明对 danqing 框架的依赖。Cargo 是 Rust 的包管理器，自动处理下载、编译和链接。
 
-### 当前：本地路径依赖 (开发阶段)
+### 当前：Git 依赖 (提交状态,danqing 已公开)
 
 ```toml
 # Cargo.toml
 [dependencies]
-danqing = { path = "../danqing" }
-```
-
-- `path` 指向本地 danqing 仓库，修改框架代码后重新编译即可生效
-- 适合框架和应用同步开发的阶段
-- 不需要网络，编译快
-
-### 发布后:Git 依赖 (推荐)
-
-```toml
-[dependencies]
 danqing = { git = "https://github.com/14uncle/danqing" }
 ```
 
-- 用户 `git clone` 时用 `--recursive` 拉取子模块
-- Cargo 自动从 GitHub 克隆 danqing 并编译
-- 可以锁定版本：`danqing = { git = "...", branch = "master" }`
+- 仓库自洽：任何人 `git clone` 后 `cargo build` 即可构建，Cargo 自动从 GitHub 克隆 danqing
+- `Cargo.lock` 钉住精确 rev:发布可复现，checkout 旧 tag + `cargo build --locked` 可重建当时的二进制
+- 升级框架是有意识的决定：`cargo update -p danqing` 后提交 Cargo.lock
+- CI 为单 checkout:path 依赖被误提交会因找不到 `../danqing` 立即失败 (护栏)
+
+### 本地联动开发：临时切 path (不提交)
+
+框架与产品同步开发时，临时把 `Cargo.toml` 改为本地路径：
+
+```toml
+danqing = { path = "../danqing" }
+```
+
+- 修改框架代码后重新编译即可生效，无需 push
+- **完事改回 git 依赖再提交**;误提交会被 CI 护栏拦住
+- 也可在用户级 `~/.cargo/config.toml` 配置 `paths = ["F:/github/farm01/danqing"]` path override(对本机所有项目生效,Cargo.lock 不受影响);danqing 新增依赖时 override 会报错，此时用临时切换
 
 ### 未来:crates.io 版本依赖 (框架稳定后)
 
@@ -151,7 +153,9 @@ danqing-pomodoro/
 
 ### Q: `cargo run` 报错找不到 danqing
 
-检查 `Cargo.toml` 中 `path = "../danqing"` 路径是否正确。确保 danqing 仓库在同级目录。
+- 默认 git 依赖：检查网络能否访问 GitHub,或 `cargo update -p danqing` 重新拉取
+- 临时 path 切换时：确认 danqing 仓库在同级目录 (`../danqing`)
+- 配置了用户级 `paths` override 时报依赖图不一致：本地 danqing 有未提交/未推送的依赖变更，先提交 push 再 `cargo update -p danqing`
 
 ### Q: 图标没有嵌入 exe
 
