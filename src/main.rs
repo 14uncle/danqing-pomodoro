@@ -14,7 +14,6 @@
 
 mod ambient;
 mod audio;
-mod close_button;
 mod fader;
 mod flash;
 mod hint;
@@ -34,8 +33,8 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use danqing::widget::{
-    self, Box as UiBox, Button, Center, Column, LogoKind, Node, Padding, Row, Stack, Switcher,
-    Text, TitleBar,
+    self, Box as UiBox, Button, Center, CloseButton, Column, LogoKind, Node, Padding, Row, Stack,
+    Switcher, Text, TitleBar,
 };
 use danqing::{
     AnimationCtx, App, BackgroundConfig, BackgroundFrame, Color, Easing, Edges, Event, Key,
@@ -1013,7 +1012,7 @@ fn settings_header(t: SceneTheme) -> impl widget::Widget {
                 .height(1.0),
         )
         .child(
-            close_button::CloseButton::new()
+            CloseButton::new()
                 .on_click(|| Msg::ToggleSettings)
                 .bind_color(|s: &PomodoroApp| s.palette().text_primary)
                 .bind_hover_color(|s: &PomodoroApp| s.palette().accent),
@@ -1132,7 +1131,7 @@ fn stats_header(t: SceneTheme) -> impl widget::Widget {
                 .height(1.0),
         )
         .child(
-            close_button::CloseButton::new()
+            CloseButton::new()
                 .on_click(|| Msg::ToggleStats)
                 .bind_color(|s: &PomodoroApp| s.palette().text_primary)
                 .bind_hover_color(|s: &PomodoroApp| s.palette().accent),
@@ -1298,7 +1297,7 @@ fn report_header(t: SceneTheme) -> impl widget::Widget {
                 .height(1.0),
         )
         .child(
-            close_button::CloseButton::new()
+            CloseButton::new()
                 .on_click(|| Msg::ToggleReport)
                 .bind_color(|s: &PomodoroApp| s.palette().text_primary)
                 .bind_hover_color(|s: &PomodoroApp| s.palette().accent),
