@@ -631,10 +631,11 @@ checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 [[package]]
 name = "danqing"
 version = "0.1.0"
-source = "git+https://github.com/14uncle/danqing#5d161f98be5481c45dd7ca181af8e4086378adf2"
 dependencies = [
  "arboard",
  "bytemuck",
+ "chrono",
+ "env_logger",
  "etagere",
  "font-kit",
  "fontdue",
@@ -658,7 +659,6 @@ dependencies = [
  "chrono",
  "danqing",
  "dirs 5.0.1",
- "env_logger",
  "log",
  "open",
  "rodio",
@@ -3871,7 +3871,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

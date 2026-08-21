@@ -25,8 +25,6 @@ mod timer;
 mod today;
 mod tray;
 
-mod log_helper;
-
 use chrono::Datelike;
 
 use std::process::ExitCode;
@@ -1360,7 +1358,7 @@ fn trend_row(t: SceneTheme, idx: usize) -> impl widget::Widget {
 }
 
 fn main() -> ExitCode {
-    log_helper::init_log();
+    danqing::log::init_log();
 
     match run() {
         Ok(()) => ExitCode::SUCCESS,
@@ -2230,6 +2228,7 @@ mod tests {
             pressed: true,
             shift: false,
             ctrl: false,
+            alt: false,
         });
         assert!(!app.report_open, "Esc 应关闭报告面板");
         assert_eq!(
@@ -2354,6 +2353,7 @@ mod tests {
             pressed: true,
             shift: false,
             ctrl: false,
+            alt: false,
         });
         assert!(!app.stats_open, "Escape 应关闭统计面板");
         assert_eq!(app.focus_request(), Some("stats-button"));
