@@ -139,3 +139,4 @@ src/
 - 产品说明：[README.md](README.md)
 - 依赖机制/构建/打包: [DEVELOPMENT.md](DEVELOPMENT.md)
 - danqing 框架仓库：`../danqing` (本地路径依赖)
+- 仓库记忆: [MEMORY.md](MEMORY.md) — 会话默认加载, 仓库级非显而易见知识落这里
