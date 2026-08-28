@@ -14,7 +14,6 @@
 
 mod ambient;
 mod audio;
-mod close_button;
 mod fader;
 mod flash;
 mod hint;
@@ -26,16 +25,14 @@ mod timer;
 mod today;
 mod tray;
 
-mod log_helper;
-
 use chrono::Datelike;
 
 use std::process::ExitCode;
 use std::time::Duration;
 
 use danqing::widget::{
-    self, Box as UiBox, Button, Center, Column, LogoKind, Node, Padding, Row, Stack, Switcher,
-    Text, TitleBar,
+    self, Box as UiBox, Button, Center, CloseButton, Column, LogoKind, Node, Padding, Row, Stack,
+    Switcher, Text, TitleBar,
 };
 use danqing::{
     AnimationCtx, App, BackgroundConfig, BackgroundFrame, Color, Easing, Edges, Event, Key,
@@ -1013,7 +1010,7 @@ fn settings_header(t: SceneTheme) -> impl widget::Widget {
                 .height(1.0),
         )
         .child(
-            close_button::CloseButton::new()
+            CloseButton::new()
                 .on_click(|| Msg::ToggleSettings)
                 .bind_color(|s: &PomodoroApp| s.palette().text_primary)
                 .bind_hover_color(|s: &PomodoroApp| s.palette().accent),
@@ -1132,7 +1129,7 @@ fn stats_header(t: SceneTheme) -> impl widget::Widget {
                 .height(1.0),
         )
         .child(
-            close_button::CloseButton::new()
+            CloseButton::new()
                 .on_click(|| Msg::ToggleStats)
                 .bind_color(|s: &PomodoroApp| s.palette().text_primary)
                 .bind_hover_color(|s: &PomodoroApp| s.palette().accent),
@@ -1286,13 +1283,11 @@ fn report_header(t: SceneTheme) -> impl widget::Widget {
     Row::new()
         .cross_stretch()
         .child(Center::new(
-            Row::new()
-                .gap(t.spacing_sm())
-                .child(
-                    Text::new("年度报告")
-                        .font_size(t.font_size_heading())
-                        .bind_color(|s: &PomodoroApp| s.palette().text_primary),
-                ),
+            Row::new().gap(t.spacing_sm()).child(
+                Text::new("年度报告")
+                    .font_size(t.font_size_heading())
+                    .bind_color(|s: &PomodoroApp| s.palette().text_primary),
+            ),
         ))
         .child(
             UiBox::new(Color::TRANSPARENT)
@@ -1300,7 +1295,7 @@ fn report_header(t: SceneTheme) -> impl widget::Widget {
                 .height(1.0),
         )
         .child(
-            close_button::CloseButton::new()
+            CloseButton::new()
                 .on_click(|| Msg::ToggleReport)
                 .bind_color(|s: &PomodoroApp| s.palette().text_primary)
                 .bind_hover_color(|s: &PomodoroApp| s.palette().accent),
@@ -1363,7 +1358,7 @@ fn trend_row(t: SceneTheme, idx: usize) -> impl widget::Widget {
 }
 
 fn main() -> ExitCode {
-    log_helper::init_log();
+    danqing::log::init_log();
 
     match run() {
         Ok(()) => ExitCode::SUCCESS,
@@ -1403,6 +1398,8 @@ fn run() -> anyhow::Result<()> {
         logo_name: "pomodoro".into(),
         // 专注陪伴型工具：启动即全屏沉浸 (场景大图为主角), 最大化契合视觉契约。
         maximized: true,
+        // 番茄钟需要持续渲染：隐藏态仍保持 tick 推进 (计时器/音频/场景动效)。
+        mode: danqing::WindowMode::Continuous,
         ..WindowConfig::default()
     };
     danqing::run_app(config, &mut app)?;
@@ -2231,6 +2228,7 @@ mod tests {
             pressed: true,
             shift: false,
             ctrl: false,
+            alt: false,
         });
         assert!(!app.report_open, "Esc 应关闭报告面板");
         assert_eq!(
@@ -2355,6 +2353,7 @@ mod tests {
             pressed: true,
             shift: false,
             ctrl: false,
+            alt: false,
         });
         assert!(!app.stats_open, "Escape 应关闭统计面板");
         assert_eq!(app.focus_request(), Some("stats-button"));

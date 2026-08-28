@@ -798,7 +798,7 @@ mod tests {
         // 中途改 config：当前 phase 剩余不变
         let custom = TimerConfig {
             focus_secs: 5 * 60,
-            break_secs: 1 * 60,
+            break_secs: 60,
             long_break_secs: 2 * 60,
         };
         p.update_config(custom);

@@ -631,10 +631,11 @@ checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 [[package]]
 name = "danqing"
 version = "0.1.0"
-source = "git+https://github.com/14uncle/danqing#1d8bc9c2102ecdc6a5383cc04b8eec1b9173314d"
 dependencies = [
  "arboard",
  "bytemuck",
+ "chrono",
+ "env_logger",
  "etagere",
  "font-kit",
  "fontdue",
@@ -647,6 +648,7 @@ dependencies = [
  "wgpu",
  "windows-sys 0.59.0",
  "winit",
+ "winreg",
  "winresource",
 ]
 
@@ -658,7 +660,6 @@ dependencies = [
  "chrono",
  "danqing",
  "dirs 5.0.1",
- "env_logger",
  "log",
  "open",
  "rodio",
@@ -4355,6 +4356,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "winreg"
+version = "0.55.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb5a765337c50e9ec252c2069be9bf91c7df47afb103b642ba3a53bf8101be97"
+dependencies = [
+ "cfg-if",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

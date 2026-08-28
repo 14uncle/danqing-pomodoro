@@ -9,7 +9,7 @@
 #   powershell -NoProfile -File tools/package_portable.ps1 -BinaryName showcase
 #   powershell -NoProfile -File tools/package_portable.ps1 -BinaryName danqing-pomodoro -Version 0.2.0
 #
-# If the release binary is missing, runs cargo build --release --example <name>.
+# Always runs cargo build --release --example <name> before packaging.
 # Pure ASCII by design (see repo tooling rules).
 
 param(
@@ -48,25 +48,23 @@ $Stage = Join-Path $OutDir "stage"
 $ArchiveBase = "${BinaryName}-v${Version}-win-x64"
 $ZipPath = Join-Path $OutDir "${ArchiveBase}.zip"
 
-# Locate pre-built binary: try main bin first, then example path.
+# Always build release before packaging (ensure binary is up-to-date).
+Write-Host "Building release example: $BinaryName ..."
+Push-Location $RepoRoot
+try {
+    cargo build --release --example $BinaryName
+    if ($LASTEXITCODE -ne 0) { exit 1 }
+} finally {
+    Pop-Location
+}
+
+# Locate binary: try main bin first, then example path.
 $BinaryPath = $null
 foreach ($candidate in @(
     (Join-Path $ReleaseDir "${BinaryName}.exe"),
     (Join-Path $ReleaseDir "examples\${BinaryName}.exe")
 )) {
     if (Test-Path $candidate) { $BinaryPath = $candidate; break }
-}
-
-if (-not $BinaryPath) {
-    Write-Host "Binary missing; running cargo build --release --example $BinaryName ..."
-    Push-Location $RepoRoot
-    try {
-        cargo build --release --example $BinaryName
-        if ($LASTEXITCODE -ne 0) { exit 1 }
-    } finally {
-        Pop-Location
-    }
-    $BinaryPath = Join-Path $ReleaseDir "examples\${BinaryName}.exe"
 }
 
 if (-not (Test-Path $BinaryPath)) {

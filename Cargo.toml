@@ -7,6 +7,8 @@ description = "丹青番茄钟 —— 专注陪伴的沉浸世界"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+# 提交状态固定为 git 依赖 (danqing 已公开): 仓库自洽 + Cargo.lock 钉住 rev 保证发布可复现。
+# 本地联动开发框架时的临时切换见 DEVELOPMENT.md「依赖机制」。
 danqing = { git = "https://github.com/14uncle/danqing" }
 chrono = "0.4"
 serde = { version = "1", features = ["derive"] }
@@ -14,7 +16,6 @@ serde_json = "1"
 dirs = "5"
 rodio = { version = "0.22", default-features = false, features = ["playback", "symphonia-ogg", "symphonia-vorbis"] }
 log = "0.4"
-env_logger = "0.11"
 anyhow = "1"
 open = "5"
 urlencoding = "2"
@@ -35,3 +36,8 @@ codegen-units = 1
 opt-level = "z"
 panic = "abort"
 strip = "debuginfo"
+
+# 本地联动开发: git 依赖透明替换为本地 danqing 副本。
+# 发布时去掉本段, Cargo.lock 钉 git rev 保可复现。
+[patch."https://github.com/14uncle/danqing"]
+danqing = { path = "../danqing" }
