@@ -31,8 +31,8 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use danqing::widget::{
-    self, Box as UiBox, Button, Center, CloseButton, Column, LogoKind, Node, Padding, Row, Stack,
-    Switcher, Text, TitleBar,
+    self, Box as UiBox, Button, Center, CloseButton, Column, LogoKind, MultiPanel, Node, Padding,
+    Row, Stack, Text, TitleBar,
 };
 use danqing::{
     AnimationCtx, App, BackgroundConfig, BackgroundFrame, Color, Easing, Edges, Event, Key,
@@ -507,7 +507,7 @@ impl App for PomodoroApp {
         widget::node(
             Stack::new()
                 .child(
-                    Switcher::new()
+                    MultiPanel::new()
                         .child(content_column(t))
                         .child(
                             // 额外包裹一层 Padding 避免焦点路径
@@ -1085,10 +1085,10 @@ fn stats_panel(t: SceneTheme) -> impl widget::Widget {
 }
 
 /// 统计面板导出操作区：「导出 CSV」按钮 + (已导出过时)「打开所在目录」按钮。
-/// 用 Switcher 按 `export_file_exists` 切换：未导出过只显示导出按钮，
+/// 用 MultiPanel 按 `export_file_exists` 切换：未导出过只显示导出按钮，
 /// 已导出过并排显示两个 (导出 + 打开所在目录), 面板高度恒定。
 fn export_actions(t: SceneTheme) -> impl widget::Widget {
-    Switcher::new()
+    MultiPanel::new()
         .child(ghost_button(t, "导出 CSV", Msg::ExportCsv))
         .child(
             Row::new()
