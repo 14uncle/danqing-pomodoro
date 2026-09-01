@@ -58,8 +58,8 @@ pub fn is_full() -> bool {
 /// 免费版可用的场景数量。
 pub const FREE_SCENE_COUNT: usize = 2;
 
-/// 微软商店内购链接 (用于免费版升级引导)。
-pub const STORE_URL: &str = "https://www.microsoft.com/store/apps/PLACEHOLDER";
+/// 微软商店内购链接 (用于免费版升级引导; 应用上架后生效)。
+pub const STORE_URL: &str = "https://www.microsoft.com/store/apps/9P3W6W1SR6DS";
 
 /// 检查指定场景索引是否可用。
 #[expect(dead_code)]
