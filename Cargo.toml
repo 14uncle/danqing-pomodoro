@@ -12,7 +12,7 @@ default = []
 # 完整版 (9 场景, 全功能) —— 本地/GitHub 闭源构建时启用
 full = []
 # 微软商店版: 启动时检查内购许可证, 已购则解锁完整版
-store = ["dep:windows"]
+store = ["dep:windows", "dep:windows-collections"]
 
 [dependencies]
 # 提交状态固定为 git 依赖 (danqing 已公开): 仓库自洽 + Cargo.lock 钉住 rev 保证发布可复现。
@@ -40,6 +40,11 @@ features = [
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ]
+optional = true
+# 购买流程按 InAppOfferToken 在商店目录定位 add-on 时需命名 IIterable 类型
+# (本是 windows 的传递依赖, 提升为直接依赖, 同样仅 store feature 启用)
+[dependencies.windows-collections]
+version = "0.2"
 optional = true
 
 [build-dependencies]

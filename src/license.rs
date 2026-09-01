@@ -192,7 +192,7 @@ pub fn purchase_full_version() {
 #[cfg(all(not(feature = "full"), feature = "store"))]
 mod store {
     use std::sync::atomic::Ordering;
-    use windows::Services::Store::StoreContext;
+    use windows::Services::Store::{StoreContext, StoreProduct};
     use windows::Win32::Foundation::{HWND, LPARAM};
     use windows::Win32::UI::Shell::IInitializeWithWindow;
     use windows::core::BOOL;
@@ -232,11 +232,14 @@ mod store {
             return;
         }
         std::thread::spawn(|| {
-            // catch_unwind 兜底: 任何意外 panic 不得把状态卡死在「购买中」
+            // 兜底: 线程 panic 时状态不得卡死在「购买中」。
+            // 注意仅 dev 构建生效 — release profile panic="abort" 时 panic 直接
+            // 终止进程, 该路径靠 purchase_blocking 的无 panic 纪律 (全程 Result)。
             let outcome =
                 std::panic::catch_unwind(purchase_blocking).unwrap_or(PurchaseOutcome::Failed);
             match outcome {
                 PurchaseOutcome::Purchased => {
+                    // Release 与发起处 CAS 的 AcqRel 配对; 此标志本身即数据, 无被同步的载荷
                     super::FULL_VERSION.store(true, Ordering::Release);
                     super::PURCHASE_STATE.store(super::PURCHASE_IDLE, Ordering::Release);
                     log::info!("Store purchase succeeded: full version unlocked");
@@ -257,9 +260,11 @@ mod store {
     fn purchase_blocking() -> PurchaseOutcome {
         use windows::Services::Store::StorePurchaseStatus;
         use windows::Win32::System::WinRT::{RO_INIT_MULTITHREADED, RoInitialize};
-        use windows::core::{HSTRING, Interface};
+        use windows::core::Interface;
 
-        // WinRT 异步调用需 COM 单元; 已初始化会返回错误, 忽略即可
+        // WinRT 异步调用需 COM 单元。同类型重复初始化返回 S_FALSE (Ok),
+        // 仅已有 STA 时报 RO_E_CHANGE_MODE — 成败都继续, 失败时后续调用自会报错。
+        // 线程退出不配对 RoUninitialize: 线程即弃, 无泄漏。
         let _ = unsafe { RoInitialize(RO_INIT_MULTITHREADED) };
 
         let context = match StoreContext::GetDefault() {
@@ -289,7 +294,12 @@ mod store {
             }
         }
 
-        let op = match context.RequestPurchaseAsync(&HSTRING::from(FULL_VERSION_OFFER_ID)) {
+        // 购买对话框的文档化入参是 StoreProduct (经 Partner Center 分配的 Store ID),
+        // 不是开发者自取的 offer token — 先按 InAppOfferToken 在目录中定位。
+        let Some(product) = find_full_version_product(&context) else {
+            return PurchaseOutcome::Failed;
+        };
+        let op = match product.RequestPurchaseAsync() {
             Ok(op) => op,
             Err(e) => {
                 log::warn!("RequestPurchaseAsync failed: {e}");
@@ -319,6 +329,46 @@ mod store {
         }
     }
 
+    /// 在商店目录中定位完整版内购项 (durable add-on)。
+    ///
+    /// RequestPurchaseAsync 的文档化路径是 StoreProduct::RequestPurchaseAsync
+    /// (经 Partner Center 分配的 Store ID), 直接传开发者自取的 offer token
+    /// 不被文档承诺 — 按 InAppOfferToken 匹配定位 (与 check_license 同源)。
+    fn find_full_version_product(context: &StoreContext) -> Option<StoreProduct> {
+        use windows::core::HSTRING;
+        use windows_collections::IIterable;
+
+        let kinds: IIterable<HSTRING> = vec![HSTRING::from("Durable")].into();
+        let products = context
+            .GetAssociatedStoreProductsAsync(&kinds)
+            .and_then(|op| op.get())
+            .and_then(|result| result.Products());
+        let products = match products {
+            Ok(p) => p,
+            Err(e) => {
+                log::warn!("GetAssociatedStoreProducts failed: {e}");
+                return None;
+            }
+        };
+        for pair in &products {
+            match pair.Value() {
+                Ok(product) => {
+                    let token = product
+                        .InAppOfferToken()
+                        .map(|t| t.to_string_lossy())
+                        .unwrap_or_default();
+                    if token == FULL_VERSION_OFFER_ID {
+                        return Some(product);
+                    }
+                }
+                Err(_) => continue,
+            }
+        }
+        // add-on 未创建/未发布时走到这里 — 上架前必须先在 Partner Center 建好
+        log::warn!("full version add-on not in catalog (offer token: {FULL_VERSION_OFFER_ID})");
+        None
+    }
+
     /// 找本进程主窗口句柄 (购买对话框属主)。
     ///
     /// 过滤条件: 属于本进程 + 可见 + 无属主 (顶层) + 有标题,
@@ -338,9 +388,9 @@ mod store {
             let mut pid = 0u32;
             unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
             let visible = unsafe { IsWindowVisible(hwnd) }.as_bool();
-            let top_level = unsafe { GetWindow(hwnd, GW_OWNER) }
-                .map(|h| h.0.is_null())
-                .unwrap_or(false);
+            // GetWindow(GW_OWNER): 窗口无属主 (顶层) 时原始 API 返回 NULL,
+            // windows crate 把 NULL 包装成 Err — Err 即顶层窗口 (勿用 map(is_null))。
+            let top_level = unsafe { GetWindow(hwnd, GW_OWNER) }.is_err();
             if pid == ctx.pid && visible && top_level && unsafe { GetWindowTextLengthW(hwnd) } > 0 {
                 ctx.found = hwnd;
                 return BOOL(0); // 找到即停止枚举
@@ -352,6 +402,7 @@ mod store {
             pid: std::process::id(),
             found: HWND::default(),
         };
+        // 回调返回 FALSE 主动停止枚举时, EnumWindows 本身返回 FALSE → 包装成 Err, 属预期路径
         let _ = unsafe { EnumWindows(Some(enum_proc), LPARAM(&mut ctx as *mut Ctx as isize)) };
         if ctx.found.0.is_null() {
             None

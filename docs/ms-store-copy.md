@@ -104,6 +104,7 @@ A: 窗口可以拖到任意显示器上。
 - [x] MSIX 用真实产品标识重打 (`build_msix.ps1` 已回填 Publisher CN / Identity Name)
 - [ ] MSIX 侧载实测通过 (安装/启动/未购 fail-open)
 - [ ] Partner Center 建内购 add-on, Offer ID = `danqing-pomodoro-full`
+- [ ] add-on 建好后: 重打 MSIX + 侧载实测一次「解锁完整版」点击 (购买对话框拉起 / 取消复位 / 失败可重试 — 购买代码仅 MSIX 环境可达, 单测盖不住)
 - [ ] 内购定价 ¥18 + 首发 sale ¥7.9 时段
 - [ ] 截图 ≥1 张 (建议 4~5 张)
 - [ ] 年龄分级 IARC 问卷
