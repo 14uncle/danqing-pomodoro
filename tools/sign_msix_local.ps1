@@ -29,26 +29,34 @@ if (-not (Test-Path $Msix)) {
     exit 1
 }
 
-Write-Host "=== 1/4 生成自签名证书 (.NET CertificateRequest) ==="
-$rsa = [System.Security.Cryptography.RSA]::Create(2048)
-$req = New-Object System.Security.Cryptography.X509Certificates.CertificateRequest(
-    $PublisherCN, $rsa,
-    [System.Security.Cryptography.HashAlgorithmName]::SHA256,
-    [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
-# EKU: 代码签名 (1.3.6.1.5.5.7.3.3)
-$eku = New-Object System.Security.Cryptography.OidCollection
-[void]$eku.Add("1.3.6.1.5.5.7.3.3")
-$req.CertificateExtensions.Add(
-    (New-Object System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension($eku, $false)))
-# 基本约束: 非 CA
-$req.CertificateExtensions.Add(
-    (New-Object System.Security.Cryptography.X509Certificates.X509BasicConstraintsExtension($false, $false, 0, $true)))
-$cert = $req.CreateSelfSigned(
-    [System.DateTimeOffset]::UtcNow.AddDays(-1),
-    [System.DateTimeOffset]::UtcNow.AddYears(2))
-[System.IO.File]::WriteAllBytes($PfxPath,
-    $cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx, $PfxPassword))
-Write-Host "PFX: $PfxPath"
+Write-Host "=== 1/4 自签名证书 (PFX 幂等复用) ==="
+# 必须复用既有 PFX: 每次新建证书会换指纹, 而 LocalMachine\TrustedPeople 里信任的
+# 是旧指纹 — 新签的包会 0x800B0109 (证书链不受信任)。
+if (Test-Path $PfxPath) {
+    Write-Host "复用: $PfxPath"
+    $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($PfxPath, $PfxPassword)
+} else {
+    $rsa = [System.Security.Cryptography.RSA]::Create(2048)
+    $req = New-Object System.Security.Cryptography.X509Certificates.CertificateRequest(
+        $PublisherCN, $rsa,
+        [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+        [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+    # EKU: 代码签名 (1.3.6.1.5.5.7.3.3)
+    $eku = New-Object System.Security.Cryptography.OidCollection
+    [void]$eku.Add("1.3.6.1.5.5.7.3.3")
+    $req.CertificateExtensions.Add(
+        (New-Object System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension($eku, $false)))
+    # 基本约束: 非 CA
+    $req.CertificateExtensions.Add(
+        (New-Object System.Security.Cryptography.X509Certificates.X509BasicConstraintsExtension($false, $false, 0, $true)))
+    $cert = $req.CreateSelfSigned(
+        [System.DateTimeOffset]::UtcNow.AddDays(-1),
+        [System.DateTimeOffset]::UtcNow.AddYears(2))
+    [System.IO.File]::WriteAllBytes($PfxPath,
+        $cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx, $PfxPassword))
+    Write-Host "新建: $PfxPath (若首次, 需再跑 trust_cert_machine.ps1 提权信任)"
+}
+Write-Host "Thumbprint: $($cert.Thumbprint)"
 
 Write-Host "=== 2/4 加入 CurrentUser\TrustedPeople ==="
 $store = New-Object System.Security.Cryptography.X509Certificates.X509Store("TrustedPeople", "CurrentUser")
@@ -64,7 +72,8 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "=== 4/4 Add-AppxPackage 安装 ==="
-Add-AppxPackage $Msix
+# 测试回路会反复装同版本包: 强制关旧实例 + 允许同版本覆盖
+Add-AppxPackage -ForceApplicationShutdown -ForceUpdateFromAnyVersion $Msix
 Write-Host ""
 Write-Host "=== 完成 ==="
 Write-Host "启动: explorer.exe shell:AppsFolder\14uncle.-_3y3rwcp1ep416!App"
