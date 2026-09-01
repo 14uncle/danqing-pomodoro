@@ -6,6 +6,7 @@
 ## 发布/打包
 
 - [MSIX 侧载测试工作流与坑](memory/msix-sideload-workflow.md) — ps1 中文必须 BOM / manifest 必须无 BOM / Msixvc 只认 LocalMachine 信任 / Cert: PSDrive 本机不可用; 2026-09-01 实测
+- [商店 IAP 购买链路的 windows crate 坑](memory/store-iap-windows-crate-pitfalls.md) — NULL 句柄被包装成 Err (is_err 判空) / RequestPurchaseAsync 走 StoreProduct / IInitializeWithWindow 挂属主; 2026-09-01 评审揪出
 
 ## 音频 (rodio 环境音)
 
