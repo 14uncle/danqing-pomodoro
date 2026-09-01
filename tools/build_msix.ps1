@@ -1,4 +1,4 @@
-# build_msix.ps1 - Build MSIX package for Microsoft Store.
+﻿# build_msix.ps1 - Build MSIX package for Microsoft Store.
 #
 # Creates danqing-pomodoro-store.msix for Store submission.
 # The Store auto-signs after upload, so no certificate needed.
@@ -14,11 +14,12 @@ param(
     [string]$Version = "0.2.0",
     [string]$StageDir = "target\package\stage-store",
     [string]$OutDir = "target\msix",
-    [string]$PublisherCN = "CN=PENDING",
-    [string]$AppName = "DanqingPomodoro",
-    [string]$DisplayName = "Danqing Pomodoro",
+    # Partner Center 产品标识 (2026-09-01 回填): 应用和游戏 -> 产品标识 页
+    [string]$PublisherCN = "CN=5F2A7EA5-3366-4B8A-8C0D-3BE22575711A",
+    [string]$AppName = "14uncle.-",
+    [string]$DisplayName = "丹青-番茄钟",
     [string]$PublisherDisplayName = "14uncle",
-    [string]$Description = "Immersive focus timer with 9 scenes, shaders, and ambient audio"
+    [string]$Description = "专注陪伴的沉浸世界 —— 9 场景 shader 动效 x 环境音"
 )
 
 $ErrorActionPreference = "Stop"
@@ -121,7 +122,8 @@ $ManifestLines = @(
 
 $ManifestPath = Join-Path $MsixDir "AppxManifest.xml"
 $ManifestContent = $ManifestLines -join "`n"
-[System.IO.File]::WriteAllText($ManifestPath, $ManifestContent, [System.Text.Encoding]::UTF8)
+# 无 BOM 写盘: BOM 会让包安装失败 (fix_msix.py 当年修的就是它)
+[System.IO.File]::WriteAllText($ManifestPath, $ManifestContent, (New-Object System.Text.UTF8Encoding($false)))
 
 Write-Host "=== Packaging with makeappx.exe ==="
 
