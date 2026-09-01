@@ -26,6 +26,13 @@
 - **PowerShell 的 X509Certificate2 构造器对 byte[] 绑定有怪癖**:
   `New-Object X509Certificate2($cert.Export(...))` 匹配不到重载; 直接 Add($cert) 即可
 - **explorer.exe 启动 App 返回码恒 1**: 不要用 `&&` 串后续命令
+- **侧载证书必须幂等复用** (sign_msix_local.ps1 已内建): 每次新建证书 = 换新指纹,
+  而 LocalMachine\TrustedPeople 信任的是旧指纹 → 0x800B0109; 换证书必须重跑 trust_cert_machine.ps1
+- **同版本号覆盖安装可能不换二进制**: 改代码验证必须 Remove-AppxPackage 后重装,
+  别信 -ForceUpdateFromAnyVersion (同版本号会静默保持旧文件)
+- **杀进程按路径过滤**: 用户日常跑的便携版与 MSIX 实例同名, 用 `$_.Path -like "*WindowsApps*"` 区分
+- **cargo 指纹可能失灵**: 框架 (patch 本地路径) 改了但产品构建疑似没带上 (E0433 找不到新模块)
+  → `cargo clean -p danqing` 强制重建, 别怀疑代码 (2026-09-01 真实发生)
 
 ## 清理方法
 
