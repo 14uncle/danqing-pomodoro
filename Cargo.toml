@@ -1,10 +1,18 @@
 [package]
 name = "danqing-pomodoro"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.85"
 description = "丹青番茄钟 —— 专注陪伴的沉浸世界"
 license = "MIT OR Apache-2.0"
+
+[features]
+# 默认 = 免费版 (2 场景, 无统计/报告)
+default = []
+# 完整版 (9 场景, 全功能) —— 本地/GitHub 闭源构建时启用
+full = []
+# 微软商店版: 启动时检查内购许可证, 已购则解锁完整版
+store = ["dep:windows"]
 
 [dependencies]
 # 提交状态固定为 git 依赖 (danqing 已公开): 仓库自洽 + Cargo.lock 钉住 rev 保证发布可复现。
@@ -20,6 +28,11 @@ anyhow = "1"
 open = "5"
 urlencoding = "2"
 windows-sys = { version = "0.59", features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_System_Diagnostics_Debug"] }
+# 微软商店 IAP (仅 store feature 启用时引入)
+[dependencies.windows]
+version = "0.61"
+features = ["Services_Store"]
+optional = true
 
 [build-dependencies]
 winresource = "0.1"

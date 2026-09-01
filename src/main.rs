@@ -17,6 +17,7 @@ mod audio;
 mod fader;
 mod flash;
 mod hint;
+mod license;
 mod motion;
 mod scenes;
 mod state;
@@ -238,7 +239,12 @@ impl PomodoroApp {
             state.completed_focus,
             saved_config,
         );
-        let fader = if state.current_scene < SCENES.len() {
+        let max_scene = if license::is_full() {
+            SCENES.len()
+        } else {
+            license::FREE_SCENE_COUNT
+        };
+        let fader = if state.current_scene < max_scene {
             SceneFader::new(state.current_scene, FADE_DURATION)
         } else {
             SceneFader::new(0, FADE_DURATION)
@@ -422,11 +428,21 @@ impl App for PomodoroApp {
                 self.timer.skip(self.now);
             }
             Msg::PrevScene => {
-                let target = (self.fader.current() + SCENES.len() - 1) % SCENES.len();
+                let count = if license::is_full() {
+                    SCENES.len()
+                } else {
+                    license::FREE_SCENE_COUNT
+                };
+                let target = (self.fader.current() + count - 1) % count;
                 self.fader.switch_to(target, self.now);
             }
             Msg::NextScene => {
-                let target = (self.fader.current() + 1) % SCENES.len();
+                let count = if license::is_full() {
+                    SCENES.len()
+                } else {
+                    license::FREE_SCENE_COUNT
+                };
+                let target = (self.fader.current() + 1) % count;
                 self.fader.switch_to(target, self.now);
             }
             Msg::ToggleVisible => {
@@ -458,6 +474,11 @@ impl App for PomodoroApp {
                 self.timer.update_config(timer::TimerConfig::default());
             }
             Msg::ToggleStats => {
+                if !license::stats_available() {
+                    // 免费版: 打开商店页引导升级
+                    let _ = open::that(license::STORE_URL);
+                    return;
+                }
                 // 关闭统计面板：焦点回到「统计」按钮 (一次性，见 focus_request)。
                 if self.stats_open {
                     self.restore_focus_to = Some("stats-button");
@@ -467,6 +488,11 @@ impl App for PomodoroApp {
                 self.stats_open = !self.stats_open;
             }
             Msg::ToggleReport => {
+                if !license::report_available() {
+                    // 免费版: 打开商店页引导升级
+                    let _ = open::that(license::STORE_URL);
+                    return;
+                }
                 // 关闭报告面板：焦点回到「报告」按钮 (一次性，见 focus_request)。
                 if self.report_open {
                     self.restore_focus_to = Some("report-button");
@@ -812,6 +838,11 @@ fn subtitle_text(
             ),
             Phase::Break | Phase::LongBreak => format!("{} · {scene_name}", phase.label()),
         }
+    };
+    let base = if !license::is_full() {
+        format!("{base} · 免费版")
+    } else {
+        base
     };
     if today_count >= 1 {
         format!("{base} · 今日 {today_count}")
@@ -1359,6 +1390,7 @@ fn trend_row(t: SceneTheme, idx: usize) -> impl widget::Widget {
 
 fn main() -> ExitCode {
     danqing::log::init_log();
+    license::init();
 
     match run() {
         Ok(()) => ExitCode::SUCCESS,
@@ -1412,24 +1444,33 @@ fn run() -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
+    /// 免费版副标后缀 (feature-gated, 测试用)。
+    #[cfg(not(feature = "full"))]
+    const FREE_SUFFIX: &str = " · 免费版";
+    #[cfg(feature = "full")]
+    const FREE_SUFFIX: &str = "";
+
     #[test]
     fn subtitle_running_focus_shows_round() {
         assert_eq!(
             subtitle_text(true, Phase::Focus, "篝火", 1, 0),
-            "专注 · 篝火 · 第 2/4 轮"
+            format!("专注 · 篝火 · 第 2/4 轮{FREE_SUFFIX}")
         );
         assert_eq!(
             subtitle_text(true, Phase::Focus, "海", 0, 0),
-            "专注 · 海 · 第 1/4 轮"
+            format!("专注 · 海 · 第 1/4 轮{FREE_SUFFIX}")
         );
     }
 
     #[test]
     fn subtitle_running_break_and_long_break_hide_round() {
-        assert_eq!(subtitle_text(true, Phase::Break, "海", 2, 0), "休息 · 海");
+        assert_eq!(
+            subtitle_text(true, Phase::Break, "海", 2, 0),
+            format!("休息 · 海{FREE_SUFFIX}")
+        );
         assert_eq!(
             subtitle_text(true, Phase::LongBreak, "山", 0, 0),
-            "长休息 · 山"
+            format!("长休息 · 山{FREE_SUFFIX}")
         );
     }
 
@@ -1437,11 +1478,11 @@ mod tests {
     fn subtitle_paused_keeps_paused_wording() {
         assert_eq!(
             subtitle_text(false, Phase::Focus, "雨", 3, 0),
-            "⏸ 已暂停 · 雨"
+            format!("⏸ 已暂停 · 雨{FREE_SUFFIX}")
         );
         assert_eq!(
             subtitle_text(false, Phase::LongBreak, "森林", 0, 0),
-            "⏸ 已暂停 · 森林"
+            format!("⏸ 已暂停 · 森林{FREE_SUFFIX}")
         );
     }
 
@@ -1449,15 +1490,15 @@ mod tests {
     fn subtitle_appends_today_count_when_positive() {
         assert_eq!(
             subtitle_text(true, Phase::Focus, "篝火", 1, 3),
-            "专注 · 篝火 · 第 2/4 轮 · 今日 3"
+            format!("专注 · 篝火 · 第 2/4 轮{FREE_SUFFIX} · 今日 3")
         );
         assert_eq!(
             subtitle_text(true, Phase::Break, "海", 2, 1),
-            "休息 · 海 · 今日 1"
+            format!("休息 · 海{FREE_SUFFIX} · 今日 1")
         );
         assert_eq!(
             subtitle_text(false, Phase::Focus, "雨", 3, 2),
-            "⏸ 已暂停 · 雨 · 今日 2"
+            format!("⏸ 已暂停 · 雨{FREE_SUFFIX} · 今日 2")
         );
     }
 
@@ -2166,7 +2207,9 @@ mod tests {
     }
 
     // === 统计面板 (2026-08-01) ===
+    // 免费版点击统计/报告会打开商店页而非切换面板, 以下测试仅完整版适用。
 
+    #[cfg(feature = "full")]
     #[test]
     fn toggle_stats_flips_state() {
         let mut app = PomodoroApp::new_default();
@@ -2177,6 +2220,7 @@ mod tests {
         assert!(!app.stats_open);
     }
 
+    #[cfg(feature = "full")]
     #[test]
     fn stats_and_settings_mutually_exclusive() {
         let mut app = PomodoroApp::new_default();
@@ -2192,6 +2236,7 @@ mod tests {
 
     // === 年度报告面板 (2026-08-01 里程碑 1 Task E) ===
 
+    #[cfg(feature = "full")]
     #[test]
     fn toggle_report_flips_state() {
         let mut app = PomodoroApp::new_default();
@@ -2202,6 +2247,7 @@ mod tests {
         assert!(!app.report_open);
     }
 
+    #[cfg(feature = "full")]
     #[test]
     fn report_settings_stats_mutually_exclusive() {
         let mut app = PomodoroApp::new_default();
@@ -2218,6 +2264,7 @@ mod tests {
         assert!(!app.report_open, "打开设置应关闭报告");
     }
 
+    #[cfg(feature = "full")]
     #[test]
     fn escape_closes_report() {
         let mut app = PomodoroApp::new_default();
@@ -2318,6 +2365,7 @@ mod tests {
 
     // === 面板关闭后焦点回归 (2026-08-01) ===
 
+    #[cfg(feature = "full")]
     #[test]
     fn closing_stats_panel_requests_focus_restore_to_anchor() {
         let mut app = fresh_app_with_empty_history();
@@ -2343,6 +2391,7 @@ mod tests {
         assert_eq!(app.focus_request(), Some("settings-button"));
     }
 
+    #[cfg(feature = "full")]
     #[test]
     fn escape_close_requests_focus_restore() {
         // Escape 关闭路径同样应请求焦点回归 (焦点为空时由应用层关闭面板)。
