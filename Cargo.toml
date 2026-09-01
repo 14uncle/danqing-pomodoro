@@ -29,9 +29,17 @@ open = "5"
 urlencoding = "2"
 windows-sys = { version = "0.59", features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_System_Diagnostics_Debug"] }
 # 微软商店 IAP (仅 store feature 启用时引入)
+# Win32_UI_Shell/WinRT: 购买对话框属主绑定 (IInitializeWithWindow) + COM 单元初始化;
+# Win32_UI_WindowsAndMessaging: EnumWindows 定位本进程主窗口
 [dependencies.windows]
 version = "0.61"
-features = ["Services_Store"]
+features = [
+    "Services_Store",
+    "Win32_Foundation",
+    "Win32_System_WinRT",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+]
 optional = true
 
 [build-dependencies]

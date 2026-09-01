@@ -176,6 +176,8 @@ enum Msg {
     OpenExportDir,
     /// 打开 GitHub Issues 反馈页面 (预填标题前缀 + 版本 + OS)。
     OpenFeedback,
+    /// 购买 / 解锁完整版 (设置面板「版本」行; 行为按构建变体分派, 见 license 模块)。
+    Upgrade,
 }
 
 impl PomodoroApp {
@@ -525,6 +527,7 @@ impl App for PomodoroApp {
                 }
             }
             Msg::OpenFeedback => open_feedback(),
+            Msg::Upgrade => license::purchase_full_version(),
         }
     }
 
@@ -977,6 +980,76 @@ fn sound_setting_row(t: SceneTheme) -> impl widget::Widget {
         .child(Center::new(sound_toggle_button(t)))
 }
 
+/// 设置面板行：版本状态 + (免费版时) 升级入口。
+///
+/// 右侧内容随授权/购买状态切换 (MultiPanel, 见 license::version_row):
+/// 完整版 ✓ / 免费版+解锁按钮 / 购买中… / 购买未完成+重试。
+/// 购买成功后行立即变「完整版 ✓」— 这就是购买反馈本身。
+fn version_setting_row(t: SceneTheme) -> impl widget::Widget {
+    Row::new()
+        .cross_stretch()
+        .gap(t.spacing_xs())
+        .child(Center::new(
+            Text::new("版本")
+                .font_size(t.font_size_body())
+                .bind_color(|s: &PomodoroApp| s.palette().text_secondary),
+        ))
+        // 与步进行的 [-] 占位对齐 (同 sound_setting_row)。
+        .child(
+            UiBox::new(Color::TRANSPARENT)
+                .width(STEPPER_MINUS_OFFSET)
+                .height(1.0),
+        )
+        .child(Center::new(version_status_widget(t)))
+}
+
+/// 「版本」行右侧：状态文案 (+ 免费版时的升级按钮)。
+fn version_status_widget(t: SceneTheme) -> impl widget::Widget {
+    MultiPanel::new()
+        // 面板 0: 有操作 — 状态文案 + 升级/重试按钮
+        .child(
+            Row::new()
+                .gap(t.spacing_xs())
+                .child(Center::new(
+                    Text::bind(|_: &PomodoroApp| license::version_row().status.to_string())
+                        .font_size(t.font_size_body())
+                        .bind_color(|s: &PomodoroApp| s.palette().text_secondary),
+                ))
+                .child(Center::new(upgrade_button(t))),
+        )
+        // 面板 1: 无操作 — 纯状态文案 (完整版用 accent 点亮, 购买中用次级色)
+        .child(Center::new(
+            Text::bind(|_: &PomodoroApp| license::version_row().status.to_string())
+                .font_size(t.font_size_body())
+                .bind_color(|s: &PomodoroApp| {
+                    if license::is_full() {
+                        s.palette().accent
+                    } else {
+                        s.palette().text_secondary
+                    }
+                }),
+        ))
+        .bind(|_: &PomodoroApp| usize::from(license::version_row().action.is_none()))
+}
+
+/// 升级按钮：幽灵样式, 文案随购买状态 (解锁完整版/重试), 点击发起购买。
+fn upgrade_button(t: SceneTheme) -> Button {
+    Button::themed(
+        &t,
+        Text::bind(|_: &PomodoroApp| {
+            license::version_row()
+                .action
+                .unwrap_or_default()
+                .to_string()
+        })
+        .bind_color(|s: &PomodoroApp| s.palette().accent),
+    )
+    .bind_color(|_: &PomodoroApp| Color::TRANSPARENT)
+    .bind_hover_color(|s: &PomodoroApp| s.palette().surface)
+    .bind_focus_color(|s: &PomodoroApp| s.palette().accent)
+    .on_click(|| Msg::Upgrade)
+}
+
 /// 设置面板浮层：居中玻璃卡片，调整专注/短休/长休时长。
 fn settings_panel(t: SceneTheme) -> impl widget::Widget {
     // 半透明遮罩 + 居中玻璃卡片
@@ -1013,6 +1086,7 @@ fn settings_panel(t: SceneTheme) -> impl widget::Widget {
                             Msg::IncLongBreak,
                         ))
                         .child(sound_setting_row(t))
+                        .child(version_setting_row(t))
                         .child(ghost_button(t, "重置计时", Msg::ResetConfig))
                         .child(ghost_button(t, "问题反馈", Msg::OpenFeedback))
                         .child(
@@ -2428,6 +2502,23 @@ mod tests {
         assert!(
             size.height < 100.0,
             "步进行高度应随内容 (控件高), 而非窗体高：{}",
+            size.height
+        );
+    }
+
+    #[test]
+    fn version_row_height_tracks_content_not_window() {
+        // 与步进行同款防护: 版本行占位 UiBox 有显式高度, 行高应随内容。
+        let t = test_theme();
+        let mut row = danqing::widget::node(version_setting_row(t));
+        let mut texts = danqing::TextBatch::new();
+        let size = row.layout(
+            danqing::Constraints::loose(Size::new(960.0, 640.0)),
+            &mut texts,
+        );
+        assert!(
+            size.height < 100.0,
+            "版本行高度应随内容 (控件高), 而非窗体高：{}",
             size.height
         );
     }
