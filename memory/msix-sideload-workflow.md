@@ -33,6 +33,12 @@
 - **杀进程按路径过滤**: 用户日常跑的便携版与 MSIX 实例同名, 用 `$_.Path -like "*WindowsApps*"` 区分
 - **cargo 指纹可能失灵**: 框架 (patch 本地路径) 改了但产品构建疑似没带上 (E0433 找不到新模块)
   → `cargo clean -p danqing` 强制重建, 别怀疑代码 (2026-09-01 真实发生)
+- **任务栏图标被 AUMID 缓存污染**: 首装时若 exe 无内嵌图标/资产路径大小写不匹配,
+  任务栏按钮落蓝色占位块, 之后重装/bump 版本都不刷新 (缓存键=PFN!App, 与版本无关);
+  任务视图磁贴图标走另一条解析路径不受影响, 可用来区分「包资产坏了」还是「缓存坏了」;
+  真实商店用户全新安装不受影响 → 不阻塞提交; 本机验证等 shell 自行刷新或清 iconcache
+- **exe 内嵌图标必须验证**: build_freemium.ps1 的 IcoPath 默认值曾指向不存在的 logo.ico,
+  patch_icon 静默跳过 (仅 warning) → 构建输出里必须看到 "Injecting logo" 且无 warning
 
 ## 清理方法
 
