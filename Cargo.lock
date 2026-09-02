@@ -668,6 +668,7 @@ dependencies = [
  "serde_json",
  "urlencoding",
  "windows 0.61.3",
+ "windows-collections 0.2.0",
  "windows-sys 0.59.0",
  "winresource",
 ]
