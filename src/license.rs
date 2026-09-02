@@ -219,16 +219,19 @@ mod store {
             let _ = open::that(super::STORE_URL);
             return;
         }
-        // 防重入: 仅空闲 → 购买中的跃迁成功者有权发起
-        if super::PURCHASE_STATE
-            .compare_exchange(
-                super::PURCHASE_IDLE,
-                super::PURCHASE_PURCHASING,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            )
-            .is_err()
-        {
+        // 防重入: 仅当非「购买中」时发起 —— 空闲/失败态都放行 (失败要能重试)。
+        // fetch_update 返回 Err 仅当闭包返回 None (已在购买中) → 放弃本次;
+        // 原先 compare_exchange 只认「当前态=空闲」, 失败后停 FAILED 点重试会静默失效。
+        let started = super::PURCHASE_STATE
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |cur| {
+                if cur == super::PURCHASE_PURCHASING {
+                    None
+                } else {
+                    Some(super::PURCHASE_PURCHASING)
+                }
+            })
+            .is_ok();
+        if !started {
             return;
         }
         std::thread::spawn(|| {

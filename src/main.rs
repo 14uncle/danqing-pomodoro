@@ -477,8 +477,9 @@ impl App for PomodoroApp {
             }
             Msg::ToggleStats => {
                 if !license::stats_available() {
-                    // 免费版: 打开商店页引导升级
-                    let _ = open::that(license::STORE_URL);
+                    // 免费版: 引导解锁 —— 商店版拉起 IAP 购买对话框, 便携版打开商店页
+                    // (与版本行「解锁完整版」统一走 purchase_full_version 的分派)。
+                    license::purchase_full_version();
                     return;
                 }
                 // 关闭统计面板：焦点回到「统计」按钮 (一次性，见 focus_request)。
@@ -491,8 +492,9 @@ impl App for PomodoroApp {
             }
             Msg::ToggleReport => {
                 if !license::report_available() {
-                    // 免费版: 打开商店页引导升级
-                    let _ = open::that(license::STORE_URL);
+                    // 免费版: 引导解锁 —— 商店版拉起 IAP 购买对话框, 便携版打开商店页
+                    // (与版本行「解锁完整版」统一走 purchase_full_version 的分派)。
+                    license::purchase_full_version();
                     return;
                 }
                 // 关闭报告面板：焦点回到「报告」按钮 (一次性，见 focus_request)。
@@ -1007,9 +1009,12 @@ fn version_setting_row(t: SceneTheme) -> impl widget::Widget {
 fn version_status_widget(t: SceneTheme) -> impl widget::Widget {
     MultiPanel::new()
         // 面板 0: 有操作 — 状态文案 + 升级/重试按钮
+        // cross_center: 内层 Row 默认顶部对齐, 按钮比文案高会把文案顶偏;
+        // 显式垂直居中让文案与按钮对齐到行心 (与外层「版本」label 同中心)。
         .child(
             Row::new()
                 .gap(t.spacing_xs())
+                .cross_center()
                 .child(Center::new(
                     Text::bind(|_: &PomodoroApp| license::version_row().status.to_string())
                         .font_size(t.font_size_body())
