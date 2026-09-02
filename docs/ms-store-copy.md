@@ -103,7 +103,9 @@ A: 窗口可以拖到任意显示器上。
 
 - [x] MSIX 用真实产品标识重打 (`build_msix.ps1` 已回填 Publisher CN / Identity Name)
 - [ ] MSIX 侧载实测通过 (安装/启动/未购 fail-open)
-- [ ] Partner Center 建内购 add-on, Offer ID = `danqing-pomodoro-full`
+- [ ] **账户前置**: 齿轮 → 账户设置 → 付款和税务 —— 付款账户 (银行+SWIFT) + 税务信息 (个人 W-8BEN, 勾中美协定 10%); 银行验证可能 1~2 工作日 (2026-09-02 实测: 缺此则收费类提交被拦)
+- [x] Partner Center 建内购 add-on, Offer ID = `danqing-pomodoro-full` (已建, Store ID 9P4B2MPB8HNN, ¥18 + 首发促销)
+- [ ] **硬顺序 (2026-09-02 实测)**: add-on 必须在父应用发布后才能提交 —— 先提应用, 发布后再提交 add-on; 窗口期内商店版点「解锁完整版」显示「购买未完成·重试」属预期 (add-on 上线即自愈)
 - [ ] add-on 建好后: 重打 MSIX + 侧载实测一次「解锁完整版」点击 (购买对话框拉起 / 取消复位 / 失败可重试 — 购买代码仅 MSIX 环境可达, 单测盖不住)
 - [ ] 内购定价 ¥18 + 首发 sale ¥7.9 时段
 - [ ] 截图 ≥1 张 (建议 4~5 张)
