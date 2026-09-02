@@ -13,7 +13,7 @@
 # 注意: 仅用于本地测试; 提交商店的包无需签名 (商店收录时自动重签)。
 
 param(
-    [string]$MsixPath = "target\msix\danqing-pomodoro-store-v0.2.0-x64.msix",
+    [string]$MsixPath = "..\release-archives\pomodoro\msix\danqing-pomodoro-store-v0.2.0-x64.msix",
     [string]$PublisherCN = "CN=5F2A7EA5-3366-4B8A-8C0D-3BE22575711A",
     [string]$PfxPassword = "sideload"
 )
@@ -22,7 +22,7 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path "$PSScriptRoot\.."
 $Signtool = Join-Path $RepoRoot "tools\sdk-tools\bin\10.0.22621.0\x64\signtool.exe"
 $Msix = Join-Path $RepoRoot $MsixPath
-$PfxPath = Join-Path $RepoRoot "target\msix\sideload-signing.pfx"
+$PfxPath = Join-Path $RepoRoot "..\release-archives\pomodoro\msix\sideload-signing.pfx"
 
 if (-not (Test-Path $Msix)) {
     Write-Host "ERROR: MSIX not found: $Msix (先跑 tools/build_msix.ps1)"

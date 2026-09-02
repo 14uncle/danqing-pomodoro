@@ -1,5 +1,6 @@
 /target
 .idea/
 .claude/
+__pycache__/
 # Windows SDK 打包工具 (makeappx 等, ~42MB) — 缺失时按 tools/build_msix.ps1 头部注释经 nuget 安装
 tools/sdk-tools/

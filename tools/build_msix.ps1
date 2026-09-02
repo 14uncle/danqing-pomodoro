@@ -12,8 +12,8 @@
 
 param(
     [string]$Version = "0.2.0",
-    [string]$StageDir = "target\package\stage-store",
-    [string]$OutDir = "target\msix",
+    [string]$StageDir = "..\release-archives\pomodoro\stage-store",
+    [string]$OutDir = "..\release-archives\pomodoro\msix",
     # Partner Center 产品标识 (2026-09-01 回填): 应用和游戏 -> 产品标识 页
     [string]$PublisherCN = "CN=5F2A7EA5-3366-4B8A-8C0D-3BE22575711A",
     [string]$AppName = "14uncle.-",
@@ -53,15 +53,34 @@ Copy-Item -Recurse (Join-Path $StagePath "assets") (Join-Path $MsixDir "assets")
 $LicPath = Join-Path $StagePath "LICENSE-MIT"
 if (Test-Path $LicPath) { Copy-Item $LicPath $MsixDir }
 
-# Copy Store assets
+# Copy Store assets (缺失时自动生成, 不再仅警告)
 $StoreAssetsDir = Join-Path (Join-Path $RepoRoot $OutDir) "assets"
-if (Test-Path $StoreAssetsDir) {
-    $DestAssets = Join-Path $MsixDir "Assets"
-    New-Item -ItemType Directory -Path $DestAssets -Force | Out-Null
-    Copy-Item "$StoreAssetsDir\*" $DestAssets
-    Write-Host "Copied Store assets"
-} else {
-    Write-Host "WARNING: Store assets not found. Run: python tools/gen_store_assets.py"
+if (-not (Test-Path $StoreAssetsDir)) {
+    Write-Host "Store assets not found, running gen_store_assets.py ..."
+    $Py = $null
+    foreach ($c in @('python', 'python3', 'py')) {
+        $w = Get-Command $c -ErrorAction SilentlyContinue
+        if ($w) { $Py = $c; break }
+    }
+    if (-not $Py) { Write-Host "ERROR: python not found"; exit 1 }
+    Push-Location $RepoRoot
+    try { & $Py tools\gen_store_assets.py } finally { Pop-Location }
+    if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: gen_store_assets.py failed"; exit 1 }
+}
+$DestAssets = Join-Path $MsixDir "Assets"
+New-Item -ItemType Directory -Path $DestAssets -Force | Out-Null
+Copy-Item "$StoreAssetsDir\*" $DestAssets
+Write-Host "Copied Store assets"
+
+# 规范化资产目录名为 "Assets" (与 manifest 引用同大小写): 上面运行时资产先落成
+# 小写 "assets", 商店资产合并入同一目录; shell 安装时按包内路径索引图标,
+# 大小写不匹配会导致任务栏/磁贴图标落回蓝色占位块。运行时读取在 Windows 上
+# 不区分大小写, 不受影响。
+$MergedAssets = Join-Path $MsixDir "assets"
+if (Test-Path $MergedAssets) {
+    # 纯大小写改名在 Windows 上要两步 (直接改报 IOException)
+    Rename-Item $MergedAssets "assets-case-tmp"
+    Rename-Item (Join-Path $MsixDir "assets-case-tmp") "Assets"
 }
 
 Write-Host "=== Generating AppxManifest.xml ==="

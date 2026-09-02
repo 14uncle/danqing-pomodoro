@@ -4,12 +4,12 @@
 Usage (from repo root):
     python tools/gen_store_assets.py
 
-Reads assets/logo/pomodoro_256.png and produces:
-    target/msix/assets/StoreLogo.png        (50x50)
-    target/msix/assets/Square44x44Logo.png   (44x44)
-    target/msix/assets/Square150x150Logo.png (150x150)
-    target/msix/assets/Wide310x150Logo.png   (310x150, logo centered)
-    target/msix/assets/SplashScreen.png      (620x300, logo centered)
+Reads assets/logo/pomodoro_256.png and produces (shared farm msix dir):
+    ../release-archives/pomodoro/msix/assets/StoreLogo.png        (50x50)
+    ../release-archives/pomodoro/msix/assets/Square44x44Logo.png   (44x44)
+    ../release-archives/pomodoro/msix/assets/Square150x150Logo.png (150x150)
+    ../release-archives/pomodoro/msix/assets/Wide310x150Logo.png   (310x150, logo centered)
+    ../release-archives/pomodoro/msix/assets/SplashScreen.png      (620x300, logo centered)
 """
 
 import os
@@ -24,7 +24,7 @@ except ImportError:
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SRC_LOGO = REPO_ROOT / "assets" / "logo" / "pomodoro_256.png"
-OUT_DIR = REPO_ROOT / "target" / "msix" / "assets"
+OUT_DIR = REPO_ROOT / ".." / "release-archives" / "pomodoro" / "msix" / "assets"
 
 # Store-required asset sizes
 ASSETS = {

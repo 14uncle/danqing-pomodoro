@@ -126,7 +126,7 @@ powershell -NoProfile -File tools/package_portable.ps1 `
   -IcoPath "assets\logo\pomodoro.ico"
 ```
 
-输出：`target/package/danqing-pomodoro-v0.1.0-win-x64.zip`
+输出：`../release-archives/pomodoro/danqing-pomodoro-v0.1.0-win-x64.zip`（农场共享归档；编译产物在农场根 `.cargo-target/`，见根 CLAUDE.md）
 
 ## 运行时资产
 

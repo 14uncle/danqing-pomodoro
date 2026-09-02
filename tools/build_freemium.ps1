@@ -1,8 +1,8 @@
 # build_freemium.ps1 - Build both free and full versions of danqing-pomodoro.
 #
-# Produces:
-#   target/package/danqing-pomodoro-free-v<version>-win-x64.zip
-#   target/package/danqing-pomodoro-full-v<version>-win-x64.zip
+# Produces (shared farm release archive, see .cargo/config.toml):
+#   ../release-archives/pomodoro/danqing-pomodoro-free-v<version>-win-x64.zip
+#   ../release-archives/pomodoro/danqing-pomodoro-full-v<version>-win-x64.zip
 #
 # Usage (from repo root):
 #   powershell -NoProfile -File tools/build_freemium.ps1
@@ -10,8 +10,8 @@
 
 param(
     [string]$Version = "",
-    [string]$OutDir = "target\package",
-    [string]$IcoPath = "assets\logo\logo.ico"
+    [string]$OutDir = "..\release-archives\pomodoro",
+    [string]$IcoPath = "assets\logo\pomodoro.ico"
 )
 
 $ErrorActionPreference = "Stop"
@@ -35,7 +35,7 @@ if (-not $PSBoundParameters.ContainsKey('Version')) {
     }
 }
 
-$ReleaseDir = Join-Path $RepoRoot "target\release"
+$ReleaseDir = Join-Path $RepoRoot "..\.cargo-target\release"  # shared farm target (see .cargo/config.toml)
 
 # Locate Python for icon injection
 $Py = $null
