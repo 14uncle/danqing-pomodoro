@@ -103,12 +103,43 @@ A: 窗口可以拖到任意显示器上。
 
 - [x] MSIX 用真实产品标识重打 (`build_msix.ps1` 已回填 Publisher CN / Identity Name)
 - [ ] MSIX 侧载实测通过 (安装/启动/未购 fail-open)
-- [ ] **账户前置**: 齿轮 → 账户设置 → 付款和税务 —— 付款账户 (银行+SWIFT) + 税务信息 (个人 W-8BEN, 勾中美协定 10%); 银行验证可能 1~2 工作日 (2026-09-02 实测: 缺此则收费类提交被拦)
+- [x] **账户前置** (2026-09-02 双绿): 付款 + 税务均验证通过 —— 付款 (建行 CNAPS 联行号 + 卡号, 当天过); 税务 W-8BEN 含中美协定优惠 (Tax Treaty Status=True)。填报含踩坑修正见文末「付款与税务资料指引」
 - [x] Partner Center 建内购 add-on, Offer ID = `danqing-pomodoro-full` (已建, Store ID 9P4B2MPB8HNN, ¥18 + 首发促销)
 - [ ] **硬顺序 (2026-09-02 实测)**: add-on 必须在父应用发布后才能提交 —— 先提应用, 发布后再提交 add-on; 窗口期内商店版点「解锁完整版」显示「购买未完成·重试」属预期 (add-on 上线即自愈)
-- [ ] add-on 建好后: 重打 MSIX + 侧载实测一次「解锁完整版」点击 (购买对话框拉起 / 取消复位 / 失败可重试 — 购买代码仅 MSIX 环境可达, 单测盖不住)
+- [ ] (add-on 发布后) 复验购买对话框: 侧载实测「解锁完整版」点击应拉起对话框 / 取消复位。2026-09-02 发布前侧载已验证: 版本行对齐✓、重试真能再发起✓ (日志: 多次点击各自触发)、统计/报告统一走 IAP✓、fail-open 免崩溃✓; 无对话框属预期, 因 add-on `danqing-pomodoro-full` 尚未进目录 (硬顺序: 须父应用先发布)
 - [ ] 内购定价 ¥18 + 首发 sale ¥7.9 时段
 - [ ] 截图 ≥1 张 (建议 4~5 张)
 - [ ] 年龄分级 IARC 问卷
 - [ ] 支持信息: 联系邮箱 + https://github.com/14uncle/danqing-pomodoro/issues
 - [ ] 上架后回填校验: `license.rs` STORE_URL 已含 Store ID (已填, 上架后链接生效)
+
+## 付款与税务资料指引 (2026-09-02 实测, 双绿)
+
+Partner Center -> 齿轮 -> 账户设置 -> 付款和税务。
+
+### 付款资料 (电子银行转账) —— 已验证
+
+- **账户名称**: 内部标签, 不审核。随便填, 例「建设银行」
+- **付款方式**: Electronic Bank Transfer; 银行帐户所在地 → China
+- **银行帐户**: CNAPS 联行号 12 位 (建行行别代码 `105`; 截图示例 `103` 是农行的, 别照抄) + 银行卡号
+- **Beneficiary 户名**: 与银行卡登记名拼音一字不差, 且须与 W-8BEN 姓名一致
+- 结果: 当天过审
+
+### 税务资料 (W-8BEN, 个人) —— 已验证
+
+向导四步: Core Details → Business Profile → Tax Residence → Tax Form (S&P 问卷):
+
+1. **Core Details**: 常驻国家 China; 账户类型 Individual
+2. **Business Profile**: First/Last Name 拼音 (与 Beneficiary + 签名一致); DBA 留空; Address line 1 真实家庭住址拼音 (房号+楼栋+小区); city/State/Postal 各字段分开填, line 1 末尾别再带城市
+3. **Tax Residence**: 常驻国 China; Tax ID type 默认 VAT (说明里写明仅澳大利亚卖家适用, 对中国无用) → **Tax ID 留空**; ABN/ARN 留空 (此页不填税号)
+4. **Tax Form (S&P)**: 个人; 非美国公民/居民; W-8ECI 不勾
+   - **Foreign TIN**: 18 位身份证号
+   - **协定优惠**: 勾「申请税收协定优惠」→ 国家 China → 收入种类 Other Copyright Royalties → 协定条款 `11(2)` → 预扣 `10`
+   - 电子签名拼音与 Beneficiary 一字不差
+
+### 踩坑记录 (本次反复被驳回的根因)
+
+- **Line 3 地址被判 P.O. Box / in-care-of 打回 (博了两次)**: 用了信箱号/单位转交样式地址。必须真实家庭住址, 纯拼音, 无信箱/「盒 Box」/单位/c-o 字样; 房号+楼栋+小区放 line 1
+- **Tax Treaty Status=False**: 漏勾协定优惠节。重走 W-8BEN 勾 China → 10%, Foreign TIN 补身份证号; 验证通过后列表应变 True
+- **Tax Residence 页 Tax ID 有必填星号但说明写 optional**: 中国卖家留空跳过是常规过法, 别填 VAT 类型/身份证号进去 (那是 W-8BEN Foreign TIN 的事)
+- Tax 表提交后列表「状态」仍是挂起验证是正常的; 打回时黄条会列出具体 Error, 逐条对
