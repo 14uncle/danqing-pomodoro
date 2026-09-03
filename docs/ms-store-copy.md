@@ -10,7 +10,7 @@
 - **类别**: 生产力 (Productivity)
 - **定价**: 免费 + 应用内购买
 - **内购项**: Offer ID `danqing-pomodoro-full` (持久型 durable), ¥18; 首发促销 ¥7.9 (Partner Center sale pricing 可设时段)
-- **年龄分级**: IARC 问卷 —— 无暴力/无用户生成内容/无赌博/无位置共享, 预计 3+ (Everyone)
+- **年龄分级**: IARC 问卷 (2026-09-03 完成) —— 数字商品购买=是 (有内购); 结果 IARC 3+ / Store 3+ / ESRB Everyone / PEGI 3+ / USK 0 / Russia 0+, 均标「应用内购买」
 
 ## 简短说明
 
@@ -89,7 +89,7 @@ A: 窗口可以拖到任意显示器上。
 ## 隐私
 
 - 数据全部本地存储，不上传、不追踪、无账号体系
-- 隐私政策 URL: **待办** (可用 GitHub 仓库 PRIVACY.md 或 Pages 托管; 商店对声明网络能力的应用通常要求)
+- 隐私政策: 2026-09-03 用 Partner Center「提供隐私策略文本」直接粘贴文本 (runFullTrust 全信任桌面应用会被强制「是否访问/收集/传输个人信息=是」并必填隐私政策; 选「提供隐私策略文本」可免 URL/托管/commit)。⚠️ 该文本目前只存于 Partner Center 字段, 未落盘到仓库 —— 建议下次把明文备份一份进 `docs/privacy-policy.md`
 
 ## 截图清单 (≥1 张, 1366×768 或更高, 与 listing 语言一致)
 
@@ -102,16 +102,17 @@ A: 窗口可以拖到任意显示器上。
 ## 提交前检查单
 
 - [x] MSIX 用真实产品标识重打 (`build_msix.ps1` 已回填 Publisher CN / Identity Name)
-- [ ] MSIX 侧载实测通过 (安装/启动/未购 fail-open)
+- [x] MSIX 侧载实测通过 (2026-09-02 完成: 版本行对齐✓、重试真能再发起✓、统计/报告统一走 IAP✓、未购 fail-open 免崩溃✓)
 - [x] **账户前置** (2026-09-02 双绿): 付款 + 税务均验证通过 —— 付款 (建行 CNAPS 联行号 + 卡号, 当天过); 税务 W-8BEN 含中美协定优惠 (Tax Treaty Status=True)。填报含踩坑修正见文末「付款与税务资料指引」
 - [x] Partner Center 建内购 add-on, Offer ID = `danqing-pomodoro-full` (已建, Store ID 9P4B2MPB8HNN, ¥18 + 首发促销)
-- [ ] **硬顺序 (2026-09-02 实测)**: add-on 必须在父应用发布后才能提交 —— 先提应用, 发布后再提交 add-on; 窗口期内商店版点「解锁完整版」显示「购买未完成·重试」属预期 (add-on 上线即自愈)
-- [ ] (add-on 发布后) 复验购买对话框: 侧载实测「解锁完整版」点击应拉起对话框 / 取消复位。2026-09-02 发布前侧载已验证: 版本行对齐✓、重试真能再发起✓ (日志: 多次点击各自触发)、统计/报告统一走 IAP✓、fail-open 免崩溃✓; 无对话框属预期, 因 add-on `danqing-pomodoro-full` 尚未进目录 (硬顺序: 须父应用先发布)
-- [ ] 内购定价 ¥18 + 首发 sale ¥7.9 时段
-- [ ] 截图 ≥1 张 (建议 4~5 张)
-- [ ] 年龄分级 IARC 问卷
-- [ ] 支持信息: 联系邮箱 + https://github.com/14uncle/danqing-pomodoro/issues
-- [ ] 上架后回填校验: `license.rs` STORE_URL 已含 Store ID (已填, 上架后链接生效)
+- [ ] **硬顺序 (2026-09-02 实测)**: add-on 必须在父应用发布后才能提交 —— 父应用已提报 (2026-09-03 进入「提交认证」), 待发布后再提交 add-on; 窗口期商店版点「解锁完整版」显示「购买未完成·重试」属预期 (add-on 上线即自愈)
+- [ ] (add-on 发布后) 复验购买对话框: 「解锁完整版」点击应拉起购买对话框 / 取消复位。发布前侧载验证已过 (见 2026-09-02 上行); 无对话框属预期, 因 add-on `danqing-pomodoro-full` 尚未进目录
+- [x] 内购定价 ¥18 + 首发 sale ¥7.9 时段 (add-on 创建时已配置)
+- [x] 截图 ≥1 张 (2026-09-03: 用完整版 `cargo run --release --features full` 截图, 上传 5 张; 自由版统计/报告被内购拦截, 须用完整 build)
+- [x] 年龄分级 IARC 问卷 (2026-09-03: 数字商品购买=是; 结果 IARC 3+ / Store 3+ / ESRB Everyone / PEGI 3+ / USK 0 / Russia 0+, 均标「应用内购买」)
+- [x] 支持信息: 联系方式 + https://github.com/14uncle/danqing-pomodoro/issues (提报已入认证, 必填项已过)
+- [x] (未必要) Store 一览 简介字段已填 (用「简短说明」一句, 2026-09-03)
+- [ ] (上架后) 回填校验: `license.rs` STORE_URL 已含 Store ID (已填, 上架后链接生效)
 
 ## 付款与税务资料指引 (2026-09-02 实测, 双绿)
 

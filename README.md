@@ -6,18 +6,22 @@
 
 ## 功能
 
-- **9 个沉浸场景**: 篝火、海、雨、山、森林、铁匠铺、洞穴、夜市、火车
-- **场景动效**: 每个场景独立 shader 动画 (火焰呼吸、海浪、雨丝、金属反光...)
-- **环境音**: 真实环境音，交叉淡化切换
-- **专注计时**: 25/5/15 经典番茄钟，支持自定义时长
-- **数据统计**: 今日/本周/累计专注时长,年度报告深度洞察
-- **数据导出**: CSV/JSON 明文导出，本地存储，你的数据你做主
+**免费版已含：** 篝火、海 2 个沉浸场景（独立 shader 动效 + 真实环境音）、经典番茄钟计时、全局快捷键。
+
+**完整版额外解锁**（微软商店买断 或 自行编译 `--features full`）：
+
+- 其余 7 个沉浸场景：雨、山、森林、铁匠铺、洞穴、夜市、火车
+- 专注数据统计（今日/本周/累计）、年度报告
+- CSV / JSON 明文导出，本地存储，你的数据你做主
 
 ## 下载
 
-从 [Releases](https://github.com/14uncle/danqing-pomodoro/releases) 下载最新版本。
+从 [Releases](https://github.com/14uncle/danqing-pomodoro/releases) 下载**免费版**（开源、免费，2 场景）。解压后双击 `danqing-pomodoro.exe` 即可运行。
 
-解压后双击 `danqing-pomodoro.exe` 即可运行。
+**完整版**（全部 9 场景 + 数据统计 + 年度报告 + 导出）二选一：
+
+- **微软商店买断**：[丹青-番茄钟](https://www.microsoft.com/store/apps/9P3W6W1SR6DS)
+- **自行编译**：`cargo build --release --features full`
 
 ## 构建
 
