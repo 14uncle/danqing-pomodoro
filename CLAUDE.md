@@ -140,3 +140,4 @@ src/
 - 依赖机制/构建/打包: [DEVELOPMENT.md](DEVELOPMENT.md)
 - danqing 框架仓库：`../danqing` (本地路径依赖)
 - 仓库记忆: [MEMORY.md](MEMORY.md) — 会话默认加载, 仓库级非显而易见知识落这里
+- 商店上架 / 渠道政策（涉及发布、定价、内购、硬顺序先读这三份）: [docs/ms-store-copy.md](docs/ms-store-copy.md) listing 文案 + 提交前检查单 + 付款税务指引 · [docs/ms-store-workflow.md](docs/ms-store-workflow.md) 上架逐 tab 流程 + 踩坑 · [docs/ms-store-channel-policy.md](docs/ms-store-channel-policy.md) 开源+免费+freemium 渠道边界
