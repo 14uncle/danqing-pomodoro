@@ -122,12 +122,16 @@ $ManifestLines = @(
     '                 EntryPoint="Windows.FullTrustApplication">'
     '      <uap:VisualElements DisplayName="' + $DisplayName + '"'
     '                          Description="' + $Description + '"'
+    # BackgroundColor 用 transparent (VS Code MSIX 同构 = 任务栏裸图标)。
+    # ⚠️ 不要加回 <uap:DefaultTile> / <uap:SplashScreen> 子元素: 2026-09-04 实测,
+    # 两者存在时 Win11 任务栏把 transparent 渲染成默认蓝底板; 全部去掉后与
+    # VS Code 结构一致, 任务栏裸图标 (实验版本 v0.2.2 -> v0.2.3)。
+    # 任务栏图标机制: 合并模式任务栏只认 manifest 的 Square44x44Logo 族
+    # (microsoft/WindowsAppSDK#2730, 任务栏团队确认 by design); WM_SETICON 仅作用于
+    # 「不合并」任务栏 —— 所以窗口图标代码对商店版任务栏无效, 全靠这里。
     '                          BackgroundColor="transparent"'
     '                          Square150x150Logo="Assets\Square150x150Logo.png"'
     '                          Square44x44Logo="Assets\Square44x44Logo.png">'
-    '        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png"'
-    '                         ShortName="' + $DisplayName + '" />'
-    '        <uap:SplashScreen Image="Assets\SplashScreen.png" />'
     '      </uap:VisualElements>'
     '    </Application>'
     '  </Applications>'
@@ -143,6 +147,30 @@ $ManifestPath = Join-Path $MsixDir "AppxManifest.xml"
 $ManifestContent = $ManifestLines -join "`n"
 # 无 BOM 写盘: BOM 会让包安装失败 (fix_msix.py 当年修的就是它)
 [System.IO.File]::WriteAllText($ManifestPath, $ManifestContent, (New-Object System.Text.UTF8Encoding($false)))
+
+Write-Host "=== Generating resources.pri (MakePri) ==="
+
+# 生成资源索引 resources.pri: shell 靠它做「限定资源解析」, 才能识别
+# Square44x44Logo.scale-*/targetsize-*_altform-unplated 等图标变体并用于任务栏
+# 裸图标渲染。缺 resources.pri 时, shell 只能拿基础 Square44x44Logo.png 垫
+# BackgroundColor 底板 → 任务栏蓝底 (2026-09-04 商店版根因; 对照 ScreenToGif
+# 与 rufus 的 res/appstore/packme.cmd 均含此文件, 均裸图标)。
+$MakePri = Join-Path $RepoRoot "tools\sdk-tools\bin\10.0.22621.0\x64\makepri.exe"
+if (-not (Test-Path $MakePri)) {
+    Write-Host "ERROR: makepri.exe not found at $MakePri"
+    exit 1
+}
+Push-Location $MsixDir
+try {
+    & $MakePri createconfig /cf priconfig.xml /dq lang-en-US /pv 10.0.0 /o
+    if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: makepri createconfig failed"; exit 1 }
+    & $MakePri new /pr . /cf priconfig.xml /of resources.pri /o
+    if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: makepri new failed"; exit 1 }
+    # priconfig.xml 只是生成 resources.pri 的中间配置, 不进包
+    Remove-Item priconfig.xml -ErrorAction SilentlyContinue
+} finally {
+    Pop-Location
+}
 
 Write-Host "=== Packaging with makeappx.exe ==="
 
