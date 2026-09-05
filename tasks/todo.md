@@ -36,7 +36,7 @@
   - Verify: `cargo test` + 手动眼看
   - Files: src/main.rs
 
-- [ ] Task 5: 商店轨 StoreContext 查/拉更新
+- [x] Task 5: 商店轨 StoreContext 查/拉更新
   - 内容: license::store 提取 `pub(crate)` 窗口定位/属主绑定 helper；update.rs 商店后端：
     查更新（结果写全局状态，行模型复用 T1），点击「更新」拉起
     `RequestDownloadAndInstallStorePackageUpdatesAsync`；无包身份/调用失败全程静默

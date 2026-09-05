@@ -146,6 +146,9 @@ pub fn update_hint(current: &str, cache: Option<&CheckCache>) -> Option<UpdateHi
 
 #[cfg(feature = "store")]
 mod store {
+    use windows::Services::Store::{StoreContext, StorePackageUpdate};
+    use windows::Win32::System::WinRT::{RO_INIT_MULTITHREADED, RoInitialize};
+
     /// 读 MSIX 包身份版本 (Major.Minor.Build, 丢弃 build_msix.ps1 恒写 0 的 Revision);
     /// 无包身份 (`cargo run --features store` 直跑) 回退编译期版本 + warn。
     pub fn package_version() -> String {
@@ -164,6 +167,81 @@ mod store {
                 env!("CARGO_PKG_VERSION").to_string()
             }
         }
+    }
+
+    /// 查商店应用更新: 有待装更新 → 其版本号; 无更新 → 当前包版本
+    /// (缓存语义与 GitHub 轨统一: 「最新版本」= 当前, 提示自然不出现);
+    /// 非 MSIX 环境/任何 API 失败 → None 静默 (spec 约束 4)。
+    pub fn check_update() -> Option<String> {
+        if !crate::license::is_running_as_msix() {
+            return None;
+        }
+        match check_update_inner() {
+            Ok(version) => Some(version),
+            Err(err) => {
+                log::warn!("商店更新检查失败: {err}");
+                None
+            }
+        }
+    }
+
+    /// 同步执行商店更新查询 (调用方负责线程)。
+    fn check_update_inner() -> windows::core::Result<String> {
+        // WinRT 异步调用需 COM 单元 (同 IAP 纪律: 成败都继续, 线程退出不配对 RoUninitialize)。
+        let _ = unsafe { RoInitialize(RO_INIT_MULTITHREADED) };
+        let context = StoreContext::GetDefault()?;
+        let updates = context.GetAppAndOptionalStorePackageUpdatesAsync()?.get()?;
+        let Some(first) = updates.into_iter().next() else {
+            return Ok(super::current_version());
+        };
+        let version = first.Package()?.Id()?.Version()?;
+        Ok(format!(
+            "{}.{}.{}",
+            version.Major, version.Minor, version.Build
+        ))
+    }
+
+    /// 拉起商店系统更新 UI (后台线程: 同步等待会阻塞 UI)。
+    /// 系统对话框接管进度/安装/重启提示; 任何失败仅一行 warn。
+    pub fn request_update() {
+        if !crate::license::is_running_as_msix() {
+            return; // 双保险: 非 MSIX 不产生提示, 正常不可达
+        }
+        std::thread::spawn(|| {
+            if let Err(err) = request_update_inner() {
+                log::warn!("拉起商店更新失败: {err}");
+            }
+        });
+    }
+
+    /// 同步执行商店更新拉起 (调用方负责线程)。
+    fn request_update_inner() -> windows::core::Result<()> {
+        use windows::Win32::UI::Shell::IInitializeWithWindow;
+        use windows::core::Interface;
+
+        let _ = unsafe { RoInitialize(RO_INIT_MULTITHREADED) };
+        let context = StoreContext::GetDefault()?;
+        // 同购买对话框: 显示 UI 的 Store 调用必须先挂主窗口属主 (IInitializeWithWindow 约定)。
+        let Some(hwnd) = crate::license::find_main_window() else {
+            log::warn!("主窗口未找到, 无法挂更新对话框属主");
+            return Ok(());
+        };
+        unsafe { context.cast::<IInitializeWithWindow>()?.Initialize(hwnd)? };
+        let updates = context.GetAppAndOptionalStorePackageUpdatesAsync()?.get()?;
+        // WinRT 引用类型的 IIterable<T> 由 Vec<Option<T>> 转换
+        // (T::Default = Option<T>, 与 HSTRING 等值类型的直转不同)。
+        let updates: Vec<Option<StorePackageUpdate>> = updates.into_iter().map(Some).collect();
+        if updates.is_empty() {
+            // 用户点击与检查之间更新已被安装/撤下: 无事发生
+            return Ok(());
+        }
+        let updates: windows_collections::IIterable<StorePackageUpdate> = updates.into();
+        // Param<IIterable> 由 &U 实现, 按值不行 (IAP 同款, 见 memory)。
+        context
+            .RequestDownloadAndInstallStorePackageUpdatesAsync(&updates)?
+            .get()?;
+        log::info!("商店更新流程已结束 (系统对话框接管后续)");
+        Ok(())
     }
 }
 
@@ -207,9 +285,8 @@ pub fn perform_action() {
     }
     #[cfg(feature = "store")]
     {
-        // Task 5 接 StoreContext 拉系统更新; 当前商店轨 fetch 恒 None,
-        // 提示不出现, 此路径不可达。
-        log::info!("商店轨更新动作待 Task 5 接入");
+        // 商店轨: 拉起系统更新 UI (下载/安装/重启提示由系统对话框接管)
+        store::request_update();
     }
 }
 
@@ -255,9 +332,9 @@ mod fetch {
 
 #[cfg(feature = "store")]
 mod fetch {
-    /// 商店轨: Task 5 接 StoreContext, 暂恒 None (静默不查)。
+    /// 商店轨: 查 StoreContext 应用更新 (无更新 → 当前版本; 失败/无包身份 → None 静默)。
     pub fn latest_version() -> Option<String> {
-        None
+        super::store::check_update()
     }
 }
 

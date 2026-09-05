@@ -187,6 +187,67 @@ pub fn purchase_full_version() {
 }
 
 // ---------------------------------------------------------------------------
+// 微软商店运行环境助手 (IAP 与更新检查共用)
+// ---------------------------------------------------------------------------
+
+/// 检查是否以 MSIX 包形式运行。
+#[cfg(feature = "store")]
+pub(crate) fn is_running_as_msix() -> bool {
+    // MSIX 环境下 Windows 会设置此环境变量
+    std::env::var("PackageName").is_ok()
+        // 备选: 检查包根目录是否存在 AppxBlockMap.xml
+        || std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.join("AppxBlockMap.xml").exists()))
+            .unwrap_or(false)
+}
+
+/// 找本进程主窗口句柄 (商店对话框属主: 购买/更新 UI 共用)。
+///
+/// 过滤条件: 属于本进程 + 可见 + 无属主 (顶层) + 有标题,
+/// 以排除托盘/全局热键创建的隐藏消息窗口。
+#[cfg(feature = "store")]
+pub(crate) fn find_main_window() -> Option<windows::Win32::Foundation::HWND> {
+    use windows::Win32::Foundation::{HWND, LPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GW_OWNER, GetWindow, GetWindowTextLengthW, GetWindowThreadProcessId,
+        IsWindowVisible,
+    };
+    use windows::core::BOOL;
+
+    struct Ctx {
+        pid: u32,
+        found: HWND,
+    }
+    unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let ctx = unsafe { &mut *(lparam.0 as *mut Ctx) };
+        let mut pid = 0u32;
+        unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
+        let visible = unsafe { IsWindowVisible(hwnd) }.as_bool();
+        // GetWindow(GW_OWNER): 窗口无属主 (顶层) 时原始 API 返回 NULL,
+        // windows crate 把 NULL 包装成 Err — Err 即顶层窗口 (勿用 map(is_null))。
+        let top_level = unsafe { GetWindow(hwnd, GW_OWNER) }.is_err();
+        if pid == ctx.pid && visible && top_level && unsafe { GetWindowTextLengthW(hwnd) } > 0 {
+            ctx.found = hwnd;
+            return BOOL(0); // 找到即停止枚举
+        }
+        BOOL(1)
+    }
+
+    let mut ctx = Ctx {
+        pid: std::process::id(),
+        found: HWND::default(),
+    };
+    // 回调返回 FALSE 主动停止枚举时, EnumWindows 本身返回 FALSE → 包装成 Err, 属预期路径
+    let _ = unsafe { EnumWindows(Some(enum_proc), LPARAM(&mut ctx as *mut Ctx as isize)) };
+    if ctx.found.0.is_null() {
+        None
+    } else {
+        Some(ctx.found)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 微软商店 IAP 检查
 // ---------------------------------------------------------------------------
 
@@ -194,9 +255,7 @@ pub fn purchase_full_version() {
 mod store {
     use std::sync::atomic::Ordering;
     use windows::Services::Store::{StoreContext, StoreProduct};
-    use windows::Win32::Foundation::{HWND, LPARAM};
     use windows::Win32::UI::Shell::IInitializeWithWindow;
-    use windows::core::BOOL;
 
     /// 完整版内购项的 Offer ID。
     /// 待办: 在 Partner Center 创建内购 add-on 时, Offer ID 必须与此值一致。
@@ -214,7 +273,7 @@ mod store {
 
     /// 拉起商店购买对话框 (立即返回, 后台线程跑购买, 结果写回授权/购买状态)。
     pub fn purchase_full_version() {
-        if !is_running_as_msix() {
+        if !super::is_running_as_msix() {
             // 非 MSIX (开发运行): 商店 API 不可用, 退化到网页引导
             log::info!("Not MSIX, opening store page for upgrade");
             let _ = open::that(super::STORE_URL);
@@ -281,7 +340,7 @@ mod store {
 
         // 桌面进程必须把购买对话框的属主设为我们的主窗口, 否则显示 UI 的
         // 调用直接失败 (IInitializeWithWindow 约定)。
-        let Some(hwnd) = find_main_window() else {
+        let Some(hwnd) = super::find_main_window() else {
             log::warn!("main window not found, cannot own purchase dialog");
             return PurchaseOutcome::Failed;
         };
@@ -373,55 +432,13 @@ mod store {
         None
     }
 
-    /// 找本进程主窗口句柄 (购买对话框属主)。
-    ///
-    /// 过滤条件: 属于本进程 + 可见 + 无属主 (顶层) + 有标题,
-    /// 以排除托盘/全局热键创建的隐藏消息窗口。
-    fn find_main_window() -> Option<HWND> {
-        use windows::Win32::UI::WindowsAndMessaging::{
-            EnumWindows, GW_OWNER, GetWindow, GetWindowTextLengthW, GetWindowThreadProcessId,
-            IsWindowVisible,
-        };
-
-        struct Ctx {
-            pid: u32,
-            found: HWND,
-        }
-        unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
-            let ctx = unsafe { &mut *(lparam.0 as *mut Ctx) };
-            let mut pid = 0u32;
-            unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
-            let visible = unsafe { IsWindowVisible(hwnd) }.as_bool();
-            // GetWindow(GW_OWNER): 窗口无属主 (顶层) 时原始 API 返回 NULL,
-            // windows crate 把 NULL 包装成 Err — Err 即顶层窗口 (勿用 map(is_null))。
-            let top_level = unsafe { GetWindow(hwnd, GW_OWNER) }.is_err();
-            if pid == ctx.pid && visible && top_level && unsafe { GetWindowTextLengthW(hwnd) } > 0 {
-                ctx.found = hwnd;
-                return BOOL(0); // 找到即停止枚举
-            }
-            BOOL(1)
-        }
-
-        let mut ctx = Ctx {
-            pid: std::process::id(),
-            found: HWND::default(),
-        };
-        // 回调返回 FALSE 主动停止枚举时, EnumWindows 本身返回 FALSE → 包装成 Err, 属预期路径
-        let _ = unsafe { EnumWindows(Some(enum_proc), LPARAM(&mut ctx as *mut Ctx as isize)) };
-        if ctx.found.0.is_null() {
-            None
-        } else {
-            Some(ctx.found)
-        }
-    }
-
     /// 检查微软商店内购许可证是否有效。
     ///
     /// 返回 `true` 表示已购买完整版内购项。
     /// 任何错误 (非 MSIX 环境/网络问题/未购买) 均返回 `false`。
     pub fn check_license() -> bool {
         // 1. 检查是否在 MSIX 环境中运行
-        if !is_running_as_msix() {
+        if !super::is_running_as_msix() {
             log::debug!("Not running as MSIX, skipping store check");
             return false;
         }
@@ -472,17 +489,6 @@ mod store {
                 false
             }
         }
-    }
-
-    /// 检查是否以 MSIX 包形式运行。
-    fn is_running_as_msix() -> bool {
-        // MSIX 环境下 Windows 会设置此环境变量
-        std::env::var("PackageName").is_ok()
-            // 备选: 检查包根目录是否存在 AppxBlockMap.xml
-            || std::env::current_exe()
-                .ok()
-                .and_then(|p| p.parent().map(|d| d.join("AppxBlockMap.xml").exists()))
-                .unwrap_or(false)
     }
 }
 
