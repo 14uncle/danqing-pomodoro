@@ -70,6 +70,8 @@ const SETTINGS_HEADER_GAP: f32 = 150.0;
 const STEPPER_VALUE_WIDTH: f32 = 72.0;
 /// 减号按钮相对标签的偏移量：把 [-] 从标签右侧推开 15px (视觉微调)。
 const STEPPER_MINUS_OFFSET: f32 = 15.0;
+/// 设置按钮更新角标直径 (逻辑像素; 圆点 = 半径取直径之半)。
+const SETTINGS_BADGE_DIAMETER: f32 = 8.0;
 
 /// 番茄钟应用状态。
 struct PomodoroApp {
@@ -938,8 +940,40 @@ fn control_pill(t: SceneTheme) -> impl widget::Widget {
                 // 面板关闭后焦点回锚点按钮 (按稳定 id, 见 focus_request)。
                 .child(ghost_button(t, "统计", Msg::ToggleStats).id("stats-button"))
                 .child(ghost_button(t, "报告", Msg::ToggleReport).id("report-button"))
-                .child(ghost_button(t, "设置", Msg::ToggleSettings).id("settings-button")),
+                .child(settings_button(t)),
         ))
+}
+
+/// 设置按钮：幽灵样式, 内容带更新角标槽位 (有新版时 accent 圆点)。
+///
+/// 角标常占槽位、只靠颜色显隐 —— 显隐零布局位移 (spec 约束 6);
+/// 圆点直径固定, 不随主题间距变化。
+fn settings_button(t: SceneTheme) -> Button {
+    Button::themed(
+        &t,
+        Row::new()
+            .gap(t.spacing_xs())
+            .cross_center()
+            .child(Text::new("设置").bind_color(|s: &PomodoroApp| s.palette().text_primary))
+            .child(
+                UiBox::new(Color::TRANSPARENT)
+                    .width(SETTINGS_BADGE_DIAMETER)
+                    .height(SETTINGS_BADGE_DIAMETER)
+                    .radius(SETTINGS_BADGE_DIAMETER / 2.0)
+                    .bind_color(|s: &PomodoroApp| {
+                        if update::current_hint().is_some() {
+                            s.palette().accent
+                        } else {
+                            Color::TRANSPARENT
+                        }
+                    }),
+            ),
+    )
+    .bind_color(|_: &PomodoroApp| Color::TRANSPARENT)
+    .bind_hover_color(|s: &PomodoroApp| s.palette().surface)
+    .bind_focus_color(|s: &PomodoroApp| s.palette().accent)
+    .on_click(|| Msg::ToggleSettings)
+    .id("settings-button")
 }
 
 /// 全局环境音开关按钮：文字随状态 (开/关), 颜色同步 (开 = accent 活动态，关 = 次级色弱化)。
@@ -2570,6 +2604,32 @@ mod tests {
             size.height < 100.0,
             "版本行高度应随内容 (控件高), 而非窗体高：{}",
             size.height
+        );
+    }
+
+    #[test]
+    fn settings_button_badge_slot_does_not_inflate_height() {
+        // 角标槽位常驻: 带角标的设置按钮与裸幽灵按钮同高 (角标不撑高),
+        // 且宽度恒大于裸按钮 (槽位预留 = 角标显隐零位移的前提, spec 约束 6)。
+        let t = test_theme();
+        let mut texts = danqing::TextBatch::new();
+        let mut badge_btn = danqing::widget::node(settings_button(t));
+        let badge_size = badge_btn.layout(
+            danqing::Constraints::loose(Size::new(960.0, 640.0)),
+            &mut texts,
+        );
+        let mut texts_plain = danqing::TextBatch::new();
+        let mut plain_btn = danqing::widget::node(ghost_button(t, "设置", Msg::ToggleSettings));
+        let plain_size = plain_btn.layout(
+            danqing::Constraints::loose(Size::new(960.0, 640.0)),
+            &mut texts_plain,
+        );
+        assert_eq!(badge_size.height, plain_size.height, "角标不得撑高设置按钮");
+        assert!(
+            badge_size.width > plain_size.width,
+            "角标槽位应常驻预留宽度: {} 应大于 {}",
+            badge_size.width,
+            plain_size.width
         );
     }
 

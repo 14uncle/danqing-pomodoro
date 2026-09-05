@@ -29,7 +29,7 @@
   - Verify: `cargo test` + 手动三条 Acceptance 各过一遍
   - Files: Cargo.toml, src/update.rs, src/main.rs
 
-- [ ] Task 4: 设置按钮角标
+- [x] Task 4: 设置按钮角标
   - 内容: `Stack` 叠加主题色 accent 圆点于「设置」幽灵按钮右上角；仅「有新版本」时可见；
     版本追平后消失
   - Acceptance: 有新版时角标出现且不挤压按钮布局（沿用布局回归测试模式加一条断言）
