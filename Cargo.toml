@@ -1,6 +1,6 @@
 [package]
 name = "danqing-pomodoro"
-version = "0.2.0"
+version = "0.2.8"
 edition = "2024"
 rust-version = "1.85"
 description = "丹青番茄钟 —— 专注陪伴的沉浸世界"
