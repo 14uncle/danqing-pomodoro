@@ -25,6 +25,7 @@ mod stats;
 mod timer;
 mod today;
 mod tray;
+mod update;
 
 use chrono::Datelike;
 
