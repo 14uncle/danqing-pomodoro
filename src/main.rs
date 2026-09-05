@@ -1087,14 +1087,24 @@ fn version_status_widget(t: SceneTheme) -> impl widget::Widget {
                 }),
         ))
         .bind(|_: &PomodoroApp| {
-            if update::current_hint().is_some() {
-                0
-            } else if license::version_row().action.is_none() {
-                2
-            } else {
-                1
-            }
+            version_panel_index(
+                update::current_hint().is_some(),
+                license::version_row().action.is_none(),
+            )
         })
+}
+
+/// 「版本」行右侧面板选择 (纯函数): 更新提示 > 授权操作 > 纯状态。
+/// 返回值即 MultiPanel 子组件顺序 (0=更新行, 1=有操作, 2=纯状态) ——
+/// 索引与子组件顺序的耦合由此函数一处承担, 调换子组件顺序时同步改这里。
+fn version_panel_index(has_update: bool, license_action_is_none: bool) -> usize {
+    if has_update {
+        0 // 有新版: 版本行让位更新提示 (spec 成功标准 2/3)
+    } else if license_action_is_none {
+        2 // 完整版/购买中: 纯状态文案
+    } else {
+        1 // 免费版空闲/购买失败: 状态 + 升级/重试按钮
+    }
 }
 
 /// 更新按钮：幽灵样式, 文案按轨道 (前往下载/更新), 点击分派更新动作。
@@ -2605,6 +2615,16 @@ mod tests {
             "版本行高度应随内容 (控件高), 而非窗体高：{}",
             size.height
         );
+    }
+
+    #[test]
+    fn version_panel_index_prioritizes_update_hint() {
+        // 面板索引 = MultiPanel 子组件顺序 (0=更新行, 1=有操作, 2=纯状态)。
+        assert_eq!(version_panel_index(true, true), 0);
+        // 更新与升级入口同时存在时更新优先 (spec 成功标准 2/3)。
+        assert_eq!(version_panel_index(true, false), 0);
+        assert_eq!(version_panel_index(false, false), 1);
+        assert_eq!(version_panel_index(false, true), 2);
     }
 
     #[test]

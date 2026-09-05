@@ -1,11 +1,11 @@
 //! @author 十四叔
 //! @date 2026/09/05
 
-//! 双轨应用内更新感知: 纯逻辑核心。
+//! 双轨应用内更新感知: 纯逻辑 + 两轨 cfg 后端。
 //!
-//! 轨道隔离见 spec (docs/specs/update-check.md): 非 `store` 编译查 GitHub Releases,
-//! `store` 编译查 StoreContext —— 两轨后端在后续任务接入, 本模块先落地可单测的纯逻辑:
-//! 版本号解析/比较、检查结果缓存 (24h TTL)、「版本」行更新提示模型。
+//! 轨道编译期隔离见 spec (docs/specs/update-check.md): 非 `store` 编译查
+//! GitHub Releases (fetch 模块, ureq), `store` 编译查/拉 StoreContext (store 模块)。
+//! 纯逻辑: 版本号解析/比较、检查结果缓存 (24h TTL)、「版本」行更新提示模型。
 //! 约定: 任何一步解析/读写失败都按「无新版」处理, 静默不打扰。
 
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,17 @@ pub type VersionTriple = (u64, u64, u64);
 
 /// 当前版本号: GitHub 轨取编译期包版本, 商店轨取 MSIX 包身份版本
 /// (build_msix.ps1 的 -Version 独立于 Cargo.toml, 二进制自报不可信)。
-pub fn current_version() -> String {
+///
+/// 进程级缓存: 版本号在两轨上都是进程生命周期常量 (商店轨更新必须重启进程
+/// 才生效), 而本函数每帧被 UI 绑定多次调用 —— 不缓存会让商店轨开发形态
+/// (无包身份) 每帧重复 WinRT 失败并刷 warn。
+pub fn current_version() -> &'static str {
+    static CURRENT_VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CURRENT_VERSION.get_or_init(current_version_uncached)
+}
+
+/// 实际读取 (每进程一次, 见 [`current_version`])。
+fn current_version_uncached() -> String {
     #[cfg(not(feature = "store"))]
     {
         env!("CARGO_PKG_VERSION").to_string()
@@ -110,8 +120,9 @@ pub(crate) fn publish(cache: Option<CheckCache>) {
 
 /// 当前更新提示: 全局缓存 + 当前版本合成, UI 每帧调用。
 pub fn current_hint() -> Option<UpdateHint> {
-    let guard = CHECK_CACHE.lock().ok()?;
-    update_hint(&current_version(), guard.as_ref())
+    // 克隆出锁再合成: 收窄临界区, 持锁期间不做版本合成。
+    let cache = CHECK_CACHE.lock().ok()?.clone();
+    update_hint(current_version(), cache.as_ref())
 }
 
 /// 更新按钮文案: GitHub 轨跳发布页下载, 商店轨应用内拉更新。
@@ -146,8 +157,12 @@ pub fn update_hint(current: &str, cache: Option<&CheckCache>) -> Option<UpdateHi
 
 #[cfg(feature = "store")]
 mod store {
+    use std::sync::atomic::{AtomicBool, Ordering};
     use windows::Services::Store::{StoreContext, StorePackageUpdate};
     use windows::Win32::System::WinRT::{RO_INIT_MULTITHREADED, RoInitialize};
+
+    /// 更新拉起在途标志: 系统对话框存活期间忽略重复点击 (防重入)。
+    static UPDATE_REQUESTING: AtomicBool = AtomicBool::new(false);
 
     /// 读 MSIX 包身份版本 (Major.Minor.Build, 丢弃 build_msix.ps1 恒写 0 的 Revision);
     /// 无包身份 (`cargo run --features store` 直跑) 回退编译期版本 + warn。
@@ -192,7 +207,7 @@ mod store {
         let context = StoreContext::GetDefault()?;
         let updates = context.GetAppAndOptionalStorePackageUpdatesAsync()?.get()?;
         let Some(first) = updates.into_iter().next() else {
-            return Ok(super::current_version());
+            return Ok(super::current_version().to_string());
         };
         let version = first.Package()?.Id()?.Version()?;
         Ok(format!(
@@ -207,10 +222,15 @@ mod store {
         if !crate::license::is_running_as_msix() {
             return; // 双保险: 非 MSIX 不产生提示, 正常不可达
         }
+        // 防重入: 系统对话框在途期间忽略重复点击 (IAP 购买链路同款纪律)。
+        if UPDATE_REQUESTING.swap(true, Ordering::AcqRel) {
+            return;
+        }
         std::thread::spawn(|| {
             if let Err(err) = request_update_inner() {
                 log::warn!("拉起商店更新失败: {err}");
             }
+            UPDATE_REQUESTING.store(false, Ordering::Release);
         });
     }
 

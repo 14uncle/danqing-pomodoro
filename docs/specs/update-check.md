@@ -12,6 +12,18 @@
 - 已知褶皱: 两轨共用 update-check.json 无轨道字段, 换轨用户 24h 内可能看到上轨缓存结果, 自愈 (备案, 未做)。
 - 既有问题暴露: `--all-features` (store+full 非产品组合) 下 `STORE_URL` 死代码, 非本次引入 (备案, 未动)。
 
+## 评审修复 (2026-09-05, review round 1)
+
+- `current_version()` 加 `OnceLock` 进程级缓存 (返回值顺带改 `&'static str`):
+  修复商店轨开发形态 (无包身份) 下每帧 8 次 WinRT 失败 + warn 洪水; 消每帧 String 分配。
+- `current_hint()` 临界区收窄: 克隆缓存出锁再合成, 持锁期间不跨 WinRT/分配。
+- 商店轨 `request_update()` 加 `AtomicBool` 防重入 (系统对话框在途忽略连点), 对齐 IAP 纪律。
+- 版本行三态选择提纯 `version_panel_index()` + 4 分支单测: 面板索引与子组件顺序的耦合
+  由一处承担, 防静默错版。
+- ureq 依赖形态更正: 实为**无条件依赖** (反向 feature 需 default 反转 + 改商店构建命令,
+  爆炸半径大于收益); 代码路径由 cfg 隔离, 评审实测 store 二进制无 GitHub URL、无 rustls
+  (链接器 GC), 轨道隔离在二进制层成立。
+
 ## Objective
 
 两条分发轨各自获得应用内更新感知, 用户不离开应用就知道「我在哪个版本、有没有新版」。
@@ -33,8 +45,8 @@
 
 - Rust 1.85+ / edition 2024, 工具链 stable-x86_64-pc-windows-gnu (仓库 override)
 - danqing UI 框架 (git 依赖, 本地 [patch] 联动), Theme token 取色, 不自造颜色
-- **新增依赖 (唯一)**: `ureq` (default-features = false, rustls) — 仅非 store 编译启用,
-  全应用第一个网络依赖, 意图文档第 5 条约束已批准
+- **新增依赖 (唯一)**: `ureq` (default-features = false, rustls + json) — 无条件依赖,
+  调用点仅非 store 编译 (cfg 隔离); 全应用第一个网络依赖, 意图文档第 5 条约束已批准
 - **windows crate 新增 feature**: `ApplicationModel` (读包版本; 0.61 起 feature 名不带 Windows 前缀) — 仅 store 编译
 - 已有可复用依赖: `serde`/`serde_json` (解析 API 响应 + 缓存文件), `open` (跳发布页),
   `dirs` (缓存目录), `chrono` (24h 缓存判定)
