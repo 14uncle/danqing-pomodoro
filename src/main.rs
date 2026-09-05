@@ -179,6 +179,8 @@ enum Msg {
     OpenFeedback,
     /// 购买 / 解锁完整版 (设置面板「版本」行; 行为按构建变体分派, 见 license 模块)。
     Upgrade,
+    /// 更新动作 (设置面板「版本」行, 有新版时出现; 行为按轨道分派, 见 update 模块)。
+    UpdateAction,
 }
 
 impl PomodoroApp {
@@ -531,6 +533,7 @@ impl App for PomodoroApp {
             }
             Msg::OpenFeedback => open_feedback(),
             Msg::Upgrade => license::purchase_full_version(),
+            Msg::UpdateAction => update::perform_action(),
         }
     }
 
@@ -1006,10 +1009,24 @@ fn version_setting_row(t: SceneTheme) -> impl widget::Widget {
         .child(Center::new(version_status_widget(t)))
 }
 
-/// 「版本」行右侧：状态文案 (+ 免费版时的升级按钮)。
+/// 「版本」行右侧：更新提示 (最高优先) / 授权状态文案 (+ 免费版时的升级按钮)。
 fn version_status_widget(t: SceneTheme) -> impl widget::Widget {
     MultiPanel::new()
-        // 面板 0: 有操作 — 状态文案 + 升级/重试按钮
+        // 面板 0: 有新版本 — 提示 + 更新动作 (spec 成功标准 2/3: 版本行让位给更新提示)
+        .child(
+            Row::new()
+                .gap(t.spacing_xs())
+                .cross_center()
+                .child(Center::new(
+                    Text::bind(|_: &PomodoroApp| {
+                        update::current_hint().map(|h| h.status).unwrap_or_default()
+                    })
+                    .font_size(t.font_size_body())
+                    .bind_color(|s: &PomodoroApp| s.palette().accent),
+                ))
+                .child(Center::new(update_button(t))),
+        )
+        // 面板 1: 有操作 — 状态文案 + 升级/重试按钮
         // cross_center: 内层 Row 默认顶部对齐, 按钮比文案高会把文案顶偏;
         // 显式垂直居中让文案与按钮对齐到行心 (与外层「版本」label 同中心)。
         .child(
@@ -1023,7 +1040,7 @@ fn version_status_widget(t: SceneTheme) -> impl widget::Widget {
                 ))
                 .child(Center::new(upgrade_button(t))),
         )
-        // 面板 1: 无操作 — 纯状态文案 (完整版用 accent 点亮, 购买中用次级色)
+        // 面板 2: 无操作 — 纯状态文案 (完整版用 accent 点亮, 购买中用次级色)
         .child(Center::new(
             Text::bind(|_: &PomodoroApp| license::version_row().status)
                 .font_size(t.font_size_body())
@@ -1035,7 +1052,33 @@ fn version_status_widget(t: SceneTheme) -> impl widget::Widget {
                     }
                 }),
         ))
-        .bind(|_: &PomodoroApp| usize::from(license::version_row().action.is_none()))
+        .bind(|_: &PomodoroApp| {
+            if update::current_hint().is_some() {
+                0
+            } else if license::version_row().action.is_none() {
+                2
+            } else {
+                1
+            }
+        })
+}
+
+/// 更新按钮：幽灵样式, 文案按轨道 (前往下载/更新), 点击分派更新动作。
+fn update_button(t: SceneTheme) -> Button {
+    Button::themed(
+        &t,
+        Text::bind(|_: &PomodoroApp| {
+            update::current_hint()
+                .map(|h| h.action)
+                .unwrap_or_default()
+                .to_string()
+        })
+        .bind_color(|s: &PomodoroApp| s.palette().accent),
+    )
+    .bind_color(|_: &PomodoroApp| Color::TRANSPARENT)
+    .bind_hover_color(|s: &PomodoroApp| s.palette().surface)
+    .bind_focus_color(|s: &PomodoroApp| s.palette().accent)
+    .on_click(|| Msg::UpdateAction)
 }
 
 /// 升级按钮：幽灵样式, 文案随购买状态 (解锁完整版/重试), 点击发起购买。
@@ -1471,6 +1514,7 @@ fn trend_row(t: SceneTheme, idx: usize) -> impl widget::Widget {
 fn main() -> ExitCode {
     danqing::log::init_log();
     license::init();
+    update::spawn_check();
 
     match run() {
         Ok(()) => ExitCode::SUCCESS,

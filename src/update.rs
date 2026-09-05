@@ -8,9 +8,6 @@
 //! 版本号解析/比较、检查结果缓存 (24h TTL)、「版本」行更新提示模型。
 //! 约定: 任何一步解析/读写失败都按「无新版」处理, 静默不打扰。
 
-// 纯逻辑切片先行, UI 接线在 Task 2/3 落地 —— 接线完成后移除此 allow。
-#![allow(dead_code)]
-
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -101,6 +98,22 @@ pub struct UpdateHint {
     pub action: &'static str,
 }
 
+/// 全局检查结果: 后台线程 [`publish`] 写, UI 线程经 [`current_hint`] 每帧读。
+static CHECK_CACHE: std::sync::Mutex<Option<CheckCache>> = std::sync::Mutex::new(None);
+
+/// 发布检查结果 (覆盖式; None = 清空)。锁中毒时放弃本次发布 (不 panic)。
+pub(crate) fn publish(cache: Option<CheckCache>) {
+    if let Ok(mut guard) = CHECK_CACHE.lock() {
+        *guard = cache;
+    }
+}
+
+/// 当前更新提示: 全局缓存 + 当前版本合成, UI 每帧调用。
+pub fn current_hint() -> Option<UpdateHint> {
+    let guard = CHECK_CACHE.lock().ok()?;
+    update_hint(&current_version(), guard.as_ref())
+}
+
 /// 更新按钮文案: GitHub 轨跳发布页下载, 商店轨应用内拉更新。
 pub fn update_action_text() -> &'static str {
     #[cfg(not(feature = "store"))]
@@ -151,6 +164,100 @@ mod store {
                 env!("CARGO_PKG_VERSION").to_string()
             }
         }
+    }
+}
+
+/// 启动更新检查: 先读缓存立即发布 (过期缓存也安全 — 用户版本追平后提示自然消失),
+/// 缓存过期/缺失才后台线程重查; 成功写缓存并发布, 失败静默 (一行 warn, 本次会话不重试)。
+pub fn spawn_check() {
+    let cached = cache_path().and_then(|p| load_cache_from(&p));
+    let stale = cached
+        .as_ref()
+        .is_none_or(|c| !c.is_fresh(crate::state::current_wall_secs()));
+    publish(cached);
+    if !stale {
+        return;
+    }
+    // 后台线程不 join: 进程退出即终止, 无泄漏 (spec R4)。
+    std::thread::spawn(|| match fetch::latest_version() {
+        Some(latest_version) => {
+            let cache = CheckCache {
+                checked_at_secs: crate::state::current_wall_secs(),
+                latest_version,
+            };
+            if let Some(path) = cache_path() {
+                if let Err(err) = save_cache_to(&path, &cache) {
+                    log::warn!("更新检查缓存写入失败: {err}");
+                }
+            }
+            publish(Some(cache));
+        }
+        None => log::warn!("更新检查失败, 本次会话不再重试"),
+    });
+}
+
+/// 执行更新动作 (设置面板「版本」行按钮; 行为按轨道分派)。
+pub fn perform_action() {
+    #[cfg(not(feature = "store"))]
+    {
+        // GitHub 轨: 跳发布页手动下载 (自动替换 exe 不属本期范围, 见 spec)
+        if let Err(err) = open::that(RELEASES_PAGE) {
+            log::warn!("打开发布页失败: {err}");
+        }
+    }
+    #[cfg(feature = "store")]
+    {
+        // Task 5 接 StoreContext 拉系统更新; 当前商店轨 fetch 恒 None,
+        // 提示不出现, 此路径不可达。
+        log::info!("商店轨更新动作待 Task 5 接入");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 检查后端: 轨道编译期隔离 (spec: 商店轨绝口不提 GitHub, 反之亦然)
+// ---------------------------------------------------------------------------
+
+/// GitHub Releases API 端点 (latest 天然排除 draft/prerelease)。
+#[cfg(not(feature = "store"))]
+const RELEASES_API: &str = "https://api.github.com/repos/14uncle/danqing-pomodoro/releases/latest";
+/// 发布页: 「前往下载」跳转目标。
+#[cfg(not(feature = "store"))]
+pub const RELEASES_PAGE: &str = "https://github.com/14uncle/danqing-pomodoro/releases/latest";
+/// 检查请求全局超时 (启动后一次性后台调用, 不阻塞 UI)。
+#[cfg(not(feature = "store"))]
+const FETCH_TIMEOUT_SECS: u64 = 10;
+
+#[cfg(not(feature = "store"))]
+mod fetch {
+    /// GitHub 轨: 查 releases/latest 的 tag_name; 网络/解析任何失败返回 None。
+    pub fn latest_version() -> Option<String> {
+        #[derive(serde::Deserialize)]
+        struct Release {
+            tag_name: String,
+        }
+        let config = ureq::Agent::config_builder()
+            .timeout_global(Some(std::time::Duration::from_secs(
+                super::FETCH_TIMEOUT_SECS,
+            )))
+            .build();
+        // GitHub API 无 User-Agent 直接 403。
+        let release: Release = ureq::Agent::new_with_config(config)
+            .get(super::RELEASES_API)
+            .header("User-Agent", "danqing-pomodoro")
+            .call()
+            .ok()?
+            .body_mut()
+            .read_json()
+            .ok()?;
+        Some(release.tag_name)
+    }
+}
+
+#[cfg(feature = "store")]
+mod fetch {
+    /// 商店轨: Task 5 接 StoreContext, 暂恒 None (静默不查)。
+    pub fn latest_version() -> Option<String> {
+        None
     }
 }
 
@@ -275,5 +382,18 @@ mod tests {
         assert_eq!(update_action_text(), "前往下载");
         #[cfg(feature = "store")]
         assert_eq!(update_action_text(), "更新");
+    }
+
+    // --- 全局状态 → 提示合成 ---
+
+    #[test]
+    fn current_hint_reflects_published_cache() {
+        publish(Some(CheckCache {
+            checked_at_secs: 1,
+            latest_version: "v99.0.0".to_string(),
+        }));
+        assert!(current_hint().is_some());
+        publish(None);
+        assert!(current_hint().is_none());
     }
 }

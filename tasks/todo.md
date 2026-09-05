@@ -20,7 +20,7 @@
   - Verify: `cargo test` + `cargo run --release` 眼看版本行
   - Files: src/update.rs, src/license.rs, src/main.rs, Cargo.toml
 
-- [ ] Task 3: GitHub 轨更新检查端到端
+- [x] Task 3: GitHub 轨更新检查端到端
   - 内容: 加 ureq 依赖；`fetch_latest()` 后端（UA 头、超时、全程 Result）；启动时后台线程
     检查（24h 缓存新鲜则跳过）；结果经全局状态进 app 字段；版本行变「有新版本 vX.Y.Z」+
     「前往下载」按钮；点击 `open::that(releases/latest)`；检查失败静默 + 一行 warn

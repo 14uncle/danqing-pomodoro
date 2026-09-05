@@ -27,6 +27,8 @@ log = "0.4"
 anyhow = "1"
 open = "5"
 urlencoding = "2"
+# GitHub 轨更新检查 (仅非 store 编译时调用; 全应用唯一网络依赖, 见 docs/specs/update-check.md)
+ureq = { version = "3.4", default-features = false, features = ["rustls", "json"] }
 windows-sys = { version = "0.59", features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_System_Diagnostics_Debug"] }
 # 微软商店 IAP (仅 store feature 启用时引入)
 # Win32_UI_Shell/WinRT: 购买对话框属主绑定 (IInitializeWithWindow) + COM 单元初始化;
