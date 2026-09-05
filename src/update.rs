@@ -4,7 +4,8 @@
 //! 双轨应用内更新感知: 纯逻辑 + 两轨 cfg 后端。
 //!
 //! 轨道编译期隔离见 spec (docs/specs/update-check.md): 非 `store` 编译查
-//! GitHub Releases (fetch 模块, ureq), `store` 编译查/拉 StoreContext (store 模块)。
+//! GitHub Releases (ureq), `store` 编译查/拉 StoreContext (store 模块);
+//! `fetch_latest_version` 两份 cfg 定义即轨道接缝。
 //! 纯逻辑: 版本号解析/比较、检查结果缓存 (24h TTL)、「版本」行更新提示模型。
 //! 约定: 任何一步解析/读写失败都按「无新版」处理, 静默不打扰。
 
@@ -277,7 +278,7 @@ pub fn spawn_check() {
         return;
     }
     // 后台线程不 join: 进程退出即终止, 无泄漏 (spec R4)。
-    std::thread::spawn(|| match fetch::latest_version() {
+    std::thread::spawn(|| match fetch_latest_version() {
         Some(latest_version) => {
             let cache = CheckCache {
                 checked_at_secs: crate::state::current_wall_secs(),
@@ -324,38 +325,32 @@ pub const RELEASES_PAGE: &str = "https://github.com/14uncle/danqing-pomodoro/rel
 #[cfg(not(feature = "store"))]
 const FETCH_TIMEOUT_SECS: u64 = 10;
 
+/// GitHub 轨: 查 releases/latest 的 tag_name; 网络/解析任何失败返回 None。
 #[cfg(not(feature = "store"))]
-mod fetch {
-    /// GitHub 轨: 查 releases/latest 的 tag_name; 网络/解析任何失败返回 None。
-    pub fn latest_version() -> Option<String> {
-        #[derive(serde::Deserialize)]
-        struct Release {
-            tag_name: String,
-        }
-        let config = ureq::Agent::config_builder()
-            .timeout_global(Some(std::time::Duration::from_secs(
-                super::FETCH_TIMEOUT_SECS,
-            )))
-            .build();
-        // GitHub API 无 User-Agent 直接 403。
-        let release: Release = ureq::Agent::new_with_config(config)
-            .get(super::RELEASES_API)
-            .header("User-Agent", "danqing-pomodoro")
-            .call()
-            .ok()?
-            .body_mut()
-            .read_json()
-            .ok()?;
-        Some(release.tag_name)
+fn fetch_latest_version() -> Option<String> {
+    #[derive(serde::Deserialize)]
+    struct Release {
+        tag_name: String,
     }
+    let config = ureq::Agent::config_builder()
+        .timeout_global(Some(std::time::Duration::from_secs(FETCH_TIMEOUT_SECS)))
+        .build();
+    // GitHub API 无 User-Agent 直接 403。
+    let release: Release = ureq::Agent::new_with_config(config)
+        .get(RELEASES_API)
+        .header("User-Agent", "danqing-pomodoro")
+        .call()
+        .ok()?
+        .body_mut()
+        .read_json()
+        .ok()?;
+    Some(release.tag_name)
 }
 
+/// 商店轨: 查 StoreContext 应用更新 (无更新 → 当前版本; 失败/无包身份 → None 静默)。
 #[cfg(feature = "store")]
-mod fetch {
-    /// 商店轨: 查 StoreContext 应用更新 (无更新 → 当前版本; 失败/无包身份 → None 静默)。
-    pub fn latest_version() -> Option<String> {
-        super::store::check_update()
-    }
+fn fetch_latest_version() -> Option<String> {
+    store::check_update()
 }
 
 #[cfg(test)]
