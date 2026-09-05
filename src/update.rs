@@ -64,14 +64,27 @@ pub fn is_newer(current: &str, remote: &str) -> bool {
     }
 }
 
+/// 检查结论 (随缓存落盘)。两轨信息不对称:
+/// GitHub 轨知道新版本号, 商店轨只知「有/没有」。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum UpdateStatus {
+    /// 已是最新。
+    UpToDate,
+    /// 有新版且已知版本号 (GitHub 轨: releases/latest 的 tag)。
+    KnownVersion(String),
+    /// 有新版但版本号未知 (商店轨: StorePackageUpdate.Package 是「被更新的
+    /// 当前包」, 不暴露新版本号 —— 2026-09-05 侧载实测, 详见 spec 落地记录)。
+    UnknownVersion,
+}
+
 /// 检查结果缓存: 落 `%APPDATA%/danqing/update-check.json`
 /// (与 pomodoro.json 同目录的独立小文件, 不往现有数据文件加字段)。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CheckCache {
     /// 上次检查成功的 wall-clock 秒 (state::current_wall_secs 同口径)。
     pub checked_at_secs: u64,
-    /// 查到的远端最新版本串 (原始 tag, 如 "v0.2.1")。
-    pub latest_version: String,
+    /// 检查结论 (见 [`UpdateStatus`] 各轨语义)。
+    pub status: UpdateStatus,
 }
 
 impl CheckCache {
@@ -138,18 +151,27 @@ pub fn update_action_text() -> &'static str {
     }
 }
 
-/// 由缓存计算更新提示: 无缓存 / 版本未更新 / 解析失败 → None (界面零变化);
+/// 由缓存计算更新提示: 无缓存 / 已是最新 / 版本号解析失败 → None (界面零变化);
 /// 返回值即角标可见性依据 (Some = 设置按钮亮角标)。
 pub fn update_hint(current: &str, cache: Option<&CheckCache>) -> Option<UpdateHint> {
-    let cache = cache?;
-    let (major, minor, patch) = parse_version(&cache.latest_version)?;
-    if !is_newer(current, &cache.latest_version) {
-        return None;
+    match &cache?.status {
+        UpdateStatus::UpToDate => None,
+        // 商店轨: 版本号不可得, 提示不显示版本 (spec 成功标准 3)。
+        UpdateStatus::UnknownVersion => Some(UpdateHint {
+            status: "有新版本".to_string(),
+            action: update_action_text(),
+        }),
+        UpdateStatus::KnownVersion(latest) => {
+            let (major, minor, patch) = parse_version(latest)?;
+            if !is_newer(current, latest) {
+                return None;
+            }
+            Some(UpdateHint {
+                status: format!("有新版本 v{major}.{minor}.{patch}"),
+                action: update_action_text(),
+            })
+        }
     }
-    Some(UpdateHint {
-        status: format!("有新版本 v{major}.{minor}.{patch}"),
-        action: update_action_text(),
-    })
 }
 
 // ---------------------------------------------------------------------------
@@ -158,6 +180,7 @@ pub fn update_hint(current: &str, cache: Option<&CheckCache>) -> Option<UpdateHi
 
 #[cfg(feature = "store")]
 mod store {
+    use super::UpdateStatus;
     use std::sync::atomic::{AtomicBool, Ordering};
     use windows::Services::Store::{StoreContext, StorePackageUpdate};
     use windows::Win32::System::WinRT::{RO_INIT_MULTITHREADED, RoInitialize};
@@ -165,17 +188,17 @@ mod store {
     /// 更新拉起在途标志: 系统对话框存活期间忽略重复点击 (防重入)。
     static UPDATE_REQUESTING: AtomicBool = AtomicBool::new(false);
 
-    /// 包版本号格式化: Major.Minor.Build (丢弃 build_msix.ps1 恒写 0 的 Revision)。
-    fn version_string(version: &windows::ApplicationModel::PackageVersion) -> String {
-        format!("{}.{}.{}", version.Major, version.Minor, version.Build)
-    }
-
     /// 读 MSIX 包身份版本 (Major.Minor.Build, 丢弃 build_msix.ps1 恒写 0 的 Revision);
     /// 无包身份 (`cargo run --features store` 直跑) 回退编译期版本 + warn。
     pub fn package_version() -> String {
         let read = (|| -> windows::core::Result<String> {
             let pkg = windows::ApplicationModel::Package::Current()?;
-            Ok(version_string(&pkg.Id()?.Version()?))
+            let version = pkg.Id()?.Version()?;
+            // 丢弃 Revision: build_msix.ps1 恒写 0
+            Ok(format!(
+                "{}.{}.{}",
+                version.Major, version.Minor, version.Build
+            ))
         })();
         match read {
             Ok(version) => version,
@@ -186,15 +209,17 @@ mod store {
         }
     }
 
-    /// 查商店应用更新: 有待装更新 → 其版本号; 无更新 → 当前包版本
-    /// (缓存语义与 GitHub 轨统一: 「最新版本」= 当前, 提示自然不出现);
+    /// 查商店应用更新: 有待装更新 → UnknownVersion; 无更新 → UpToDate;
     /// 非 MSIX 环境/任何 API 失败 → None 静默 (spec 约束 4)。
-    pub fn check_update() -> Option<String> {
+    ///
+    /// 注意 StorePackageUpdate.Package 是「被更新的当前包」, 新版本号不可得,
+    /// 所以商店轨只有有无、没有版本 (2026-09-05 侧载实测)。
+    pub fn check_update() -> Option<UpdateStatus> {
         if !crate::license::is_running_as_msix() {
             return None;
         }
         match check_update_inner() {
-            Ok(version) => Some(version),
+            Ok(status) => Some(status),
             Err(err) => {
                 log::warn!("商店更新检查失败: {err}");
                 None
@@ -203,15 +228,18 @@ mod store {
     }
 
     /// 同步执行商店更新查询 (调用方负责线程)。
-    fn check_update_inner() -> windows::core::Result<String> {
+    fn check_update_inner() -> windows::core::Result<UpdateStatus> {
         // WinRT 异步调用需 COM 单元 (同 IAP 纪律: 成败都继续, 线程退出不配对 RoUninitialize)。
         let _ = unsafe { RoInitialize(RO_INIT_MULTITHREADED) };
         let context = StoreContext::GetDefault()?;
         let updates = context.GetAppAndOptionalStorePackageUpdatesAsync()?.get()?;
-        let Some(first) = updates.into_iter().next() else {
-            return Ok(super::current_version().to_string());
-        };
-        Ok(version_string(&first.Package()?.Id()?.Version()?))
+        let count = updates.Size()?;
+        log::info!("商店更新查询: 待装更新 {count} 个");
+        Ok(if count == 0 {
+            UpdateStatus::UpToDate
+        } else {
+            UpdateStatus::UnknownVersion
+        })
     }
 
     /// 拉起商店系统更新 UI (后台线程: 同步等待会阻塞 UI)。
@@ -275,11 +303,11 @@ pub fn spawn_check() {
         return;
     }
     // 后台线程不 join: 进程退出即终止, 无泄漏 (spec R4)。
-    std::thread::spawn(|| match fetch_latest_version() {
-        Some(latest_version) => {
+    std::thread::spawn(|| match fetch_update_status() {
+        Some(status) => {
             let cache = CheckCache {
                 checked_at_secs: crate::state::current_wall_secs(),
-                latest_version,
+                status,
             };
             if let Some(path) = cache_path() {
                 if let Err(err) = save_cache_to(&path, &cache) {
@@ -324,7 +352,7 @@ const FETCH_TIMEOUT_SECS: u64 = 10;
 
 /// GitHub 轨: 查 releases/latest 的 tag_name; 网络/解析任何失败返回 None。
 #[cfg(not(feature = "store"))]
-fn fetch_latest_version() -> Option<String> {
+fn fetch_update_status() -> Option<UpdateStatus> {
     #[derive(serde::Deserialize)]
     struct Release {
         tag_name: String,
@@ -341,12 +369,12 @@ fn fetch_latest_version() -> Option<String> {
         .body_mut()
         .read_json()
         .ok()?;
-    Some(release.tag_name)
+    Some(UpdateStatus::KnownVersion(release.tag_name))
 }
 
-/// 商店轨: 查 StoreContext 应用更新 (无更新 → 当前版本; 失败/无包身份 → None 静默)。
+/// 商店轨: 查 StoreContext 应用更新 (有/无更新; 失败/无包身份 → None 静默)。
 #[cfg(feature = "store")]
-fn fetch_latest_version() -> Option<String> {
+fn fetch_update_status() -> Option<UpdateStatus> {
     store::check_update()
 }
 
@@ -403,7 +431,7 @@ mod tests {
     fn cache_freshness_respects_ttl_boundary() {
         let cache = CheckCache {
             checked_at_secs: 1000,
-            latest_version: "v0.2.1".to_string(),
+            status: UpdateStatus::UpToDate,
         };
         assert!(cache.is_fresh(1000 + CACHE_TTL_SECS - 1)); // TTL 内
         assert!(!cache.is_fresh(1000 + CACHE_TTL_SECS)); // 恰好到期算过期
@@ -424,7 +452,7 @@ mod tests {
         let path = temp_cache_path("roundtrip");
         let cache = CheckCache {
             checked_at_secs: 1_757_000_000,
-            latest_version: "v0.2.1".to_string(),
+            status: UpdateStatus::KnownVersion("v0.2.1".to_string()),
         };
         save_cache_to(&path, &cache).expect("写缓存");
         assert_eq!(load_cache_from(&path), Some(cache));
@@ -445,23 +473,40 @@ mod tests {
     // --- 更新提示模型 ---
 
     #[test]
-    fn update_hint_none_without_cache_or_newer_version() {
+    fn update_hint_none_when_uptodate_or_not_newer() {
         assert!(update_hint("0.2.0", None).is_none()); // 无缓存
+        let up_to_date = CheckCache {
+            checked_at_secs: 1,
+            status: UpdateStatus::UpToDate,
+        };
+        assert!(update_hint("0.2.0", Some(&up_to_date)).is_none());
         let older = CheckCache {
             checked_at_secs: 1,
-            latest_version: "v0.2.0".to_string(),
+            status: UpdateStatus::KnownVersion("v0.2.0".to_string()),
         };
         assert!(update_hint("0.2.0", Some(&older)).is_none()); // 版本追平
     }
 
     #[test]
-    fn update_hint_normalizes_display_version() {
+    fn update_hint_normalizes_known_version_display() {
         let newer = CheckCache {
             checked_at_secs: 1,
-            latest_version: "9.9.9".to_string(), // 无 v 前缀也归一化展示
+            status: UpdateStatus::KnownVersion("9.9.9".to_string()), // 无 v 前缀也归一化展示
         };
         let hint = update_hint("0.2.0", Some(&newer)).expect("应有提示");
         assert_eq!(hint.status, "有新版本 v9.9.9");
+        assert_eq!(hint.action, update_action_text());
+    }
+
+    #[test]
+    fn update_hint_unknown_version_omits_version_number() {
+        // 商店轨: 商店不暴露新版本号, 提示只显示「有新版本」(spec 成功标准 3)。
+        let cache = CheckCache {
+            checked_at_secs: 1,
+            status: UpdateStatus::UnknownVersion,
+        };
+        let hint = update_hint("0.2.0", Some(&cache)).expect("应有提示");
+        assert_eq!(hint.status, "有新版本");
         assert_eq!(hint.action, update_action_text());
     }
 
@@ -479,7 +524,7 @@ mod tests {
     fn current_hint_reflects_published_cache() {
         publish(Some(CheckCache {
             checked_at_secs: 1,
-            latest_version: "v99.0.0".to_string(),
+            status: UpdateStatus::KnownVersion("v99.0.0".to_string()),
         }));
         assert!(current_hint().is_some());
         publish(None);
