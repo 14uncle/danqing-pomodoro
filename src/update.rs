@@ -83,6 +83,8 @@ pub enum UpdateStatus {
 pub struct CheckCache {
     /// 上次检查成功的 wall-clock 秒 (state::current_wall_secs 同口径)。
     pub checked_at_secs: u64,
+    /// 写入本缓存的二进制版本: 换版 (更新/降级) 后旧缓存作废, 见 [`usable_cache`]。
+    pub checked_version: String,
     /// 检查结论 (见 [`UpdateStatus`] 各轨语义)。
     pub status: UpdateStatus,
 }
@@ -291,15 +293,27 @@ mod store {
     }
 }
 
-/// 启动更新检查: 先读缓存立即发布 (过期缓存也安全 — 用户版本追平后提示自然消失),
-/// 缓存过期/缺失才后台线程重查; 成功写缓存并发布, 失败静默 (一行 warn, 本次会话不重试)。
+/// 缓存仅对写入它的二进制版本有效: 版本不一致 (更新/降级) 即作废重查 ——
+/// 商店轨 UnknownVersion 无版本号, 无法像 KnownVersion 那样经 is_newer 自纠,
+/// 换版 (含商店自动更新) 后继续发布会把「有新版本」误驻留至多 24h
+/// (2026-09-05 复跑验证揪出)。
+fn usable_cache(cache: Option<CheckCache>, current: &str) -> Option<CheckCache> {
+    cache.filter(|c| c.checked_version == current)
+}
+
+/// 启动更新检查: 先读缓存立即发布 (GitHub 轨过期缓存经 is_newer 自纠, 商店轨
+/// 靠 [`usable_cache`] 版本闸门), 缓存过期/缺失/版本不符才后台线程重查;
+/// 成功写缓存并发布, 失败静默 (一行 warn, 本次会话不重试)。
 pub fn spawn_check() {
-    let cached = cache_path().and_then(|p| load_cache_from(&p));
-    let stale = cached
+    let cached = usable_cache(
+        cache_path().and_then(|p| load_cache_from(&p)),
+        current_version(),
+    );
+    let fresh = cached
         .as_ref()
-        .is_none_or(|c| !c.is_fresh(crate::state::current_wall_secs()));
+        .is_some_and(|c| c.is_fresh(crate::state::current_wall_secs()));
     publish(cached);
-    if !stale {
+    if fresh {
         return;
     }
     // 后台线程不 join: 进程退出即终止, 无泄漏 (spec R4)。
@@ -307,6 +321,7 @@ pub fn spawn_check() {
         Some(status) => {
             let cache = CheckCache {
                 checked_at_secs: crate::state::current_wall_secs(),
+                checked_version: current_version().to_string(),
                 status,
             };
             if let Some(path) = cache_path() {
@@ -431,6 +446,7 @@ mod tests {
     fn cache_freshness_respects_ttl_boundary() {
         let cache = CheckCache {
             checked_at_secs: 1000,
+            checked_version: "0.2.0".to_string(),
             status: UpdateStatus::UpToDate,
         };
         assert!(cache.is_fresh(1000 + CACHE_TTL_SECS - 1)); // TTL 内
@@ -452,6 +468,7 @@ mod tests {
         let path = temp_cache_path("roundtrip");
         let cache = CheckCache {
             checked_at_secs: 1_757_000_000,
+            checked_version: "0.2.0".to_string(),
             status: UpdateStatus::KnownVersion("v0.2.1".to_string()),
         };
         save_cache_to(&path, &cache).expect("写缓存");
@@ -470,6 +487,33 @@ mod tests {
         let _ = std::fs::remove_file(&corrupt);
     }
 
+    // --- 缓存版本闸门 (换版作废) ---
+
+    #[test]
+    fn usable_cache_drops_cache_from_other_binary_version() {
+        let cache = CheckCache {
+            checked_at_secs: 1,
+            checked_version: "0.2.0".to_string(),
+            status: UpdateStatus::UnknownVersion,
+        };
+        assert_eq!(
+            usable_cache(Some(cache.clone()), "0.2.0"),
+            Some(cache.clone())
+        ); // 同版保留
+        assert_eq!(usable_cache(Some(cache), "0.2.7"), None); // 换版作废 (商店更新后场景)
+        assert_eq!(usable_cache(None, "0.2.7"), None);
+    }
+
+    #[test]
+    fn load_cache_tolerates_legacy_format_without_version() {
+        // checked_version 引入前的旧格式 (只存在于未发布的侧载测试机):
+        // 反序列化失败按无缓存处理, 触发重查, 不留尸。
+        let legacy = temp_cache_path("legacy");
+        std::fs::write(&legacy, r#"{"checked_at_secs":1,"status":"UpToDate"}"#).expect("写旧格式");
+        assert_eq!(load_cache_from(&legacy), None);
+        let _ = std::fs::remove_file(&legacy);
+    }
+
     // --- 更新提示模型 ---
 
     #[test]
@@ -477,11 +521,13 @@ mod tests {
         assert!(update_hint("0.2.0", None).is_none()); // 无缓存
         let up_to_date = CheckCache {
             checked_at_secs: 1,
+            checked_version: "0.2.0".to_string(),
             status: UpdateStatus::UpToDate,
         };
         assert!(update_hint("0.2.0", Some(&up_to_date)).is_none());
         let older = CheckCache {
             checked_at_secs: 1,
+            checked_version: "0.2.0".to_string(),
             status: UpdateStatus::KnownVersion("v0.2.0".to_string()),
         };
         assert!(update_hint("0.2.0", Some(&older)).is_none()); // 版本追平
@@ -491,6 +537,7 @@ mod tests {
     fn update_hint_normalizes_known_version_display() {
         let newer = CheckCache {
             checked_at_secs: 1,
+            checked_version: "0.2.0".to_string(),
             status: UpdateStatus::KnownVersion("9.9.9".to_string()), // 无 v 前缀也归一化展示
         };
         let hint = update_hint("0.2.0", Some(&newer)).expect("应有提示");
@@ -503,6 +550,7 @@ mod tests {
         // 商店轨: 商店不暴露新版本号, 提示只显示「有新版本」(spec 成功标准 3)。
         let cache = CheckCache {
             checked_at_secs: 1,
+            checked_version: "0.2.0".to_string(),
             status: UpdateStatus::UnknownVersion,
         };
         let hint = update_hint("0.2.0", Some(&cache)).expect("应有提示");
@@ -524,6 +572,7 @@ mod tests {
     fn current_hint_reflects_published_cache() {
         publish(Some(CheckCache {
             checked_at_secs: 1,
+            checked_version: "0.2.0".to_string(),
             status: UpdateStatus::KnownVersion("v99.0.0".to_string()),
         }));
         assert!(current_hint().is_some());
