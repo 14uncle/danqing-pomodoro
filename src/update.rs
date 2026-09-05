@@ -165,16 +165,17 @@ mod store {
     /// 更新拉起在途标志: 系统对话框存活期间忽略重复点击 (防重入)。
     static UPDATE_REQUESTING: AtomicBool = AtomicBool::new(false);
 
+    /// 包版本号格式化: Major.Minor.Build (丢弃 build_msix.ps1 恒写 0 的 Revision)。
+    fn version_string(version: &windows::ApplicationModel::PackageVersion) -> String {
+        format!("{}.{}.{}", version.Major, version.Minor, version.Build)
+    }
+
     /// 读 MSIX 包身份版本 (Major.Minor.Build, 丢弃 build_msix.ps1 恒写 0 的 Revision);
     /// 无包身份 (`cargo run --features store` 直跑) 回退编译期版本 + warn。
     pub fn package_version() -> String {
         let read = (|| -> windows::core::Result<String> {
             let pkg = windows::ApplicationModel::Package::Current()?;
-            let version = pkg.Id()?.Version()?;
-            Ok(format!(
-                "{}.{}.{}",
-                version.Major, version.Minor, version.Build
-            ))
+            Ok(version_string(&pkg.Id()?.Version()?))
         })();
         match read {
             Ok(version) => version,
@@ -210,11 +211,7 @@ mod store {
         let Some(first) = updates.into_iter().next() else {
             return Ok(super::current_version().to_string());
         };
-        let version = first.Package()?.Id()?.Version()?;
-        Ok(format!(
-            "{}.{}.{}",
-            version.Major, version.Minor, version.Build
-        ))
+        Ok(version_string(&first.Package()?.Id()?.Version()?))
     }
 
     /// 拉起商店系统更新 UI (后台线程: 同步等待会阻塞 UI)。
