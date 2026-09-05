@@ -1,52 +1,59 @@
-# Implementation Plan: 渠道政策落地 —— GitHub 切到 free 二进制
+# Plan: 双轨应用内更新感知 (update-check)
 
-## Overview
+- **日期**: 2026-09-05
+- **Spec**: [docs/specs/update-check.md](../docs/specs/update-check.md) (已评审)
+- **状态**: 待评审
 
-把 2026-09-03 确认的渠道政策（开源 + 免费 + freemium，开箱二进制 = 2 场景）落到 **GitHub 发布** 与 **README 口径**：v0.2.0 release 挂 **free** 二进制（不再有任何免费完整版 ZIP 后门）；完整版 = 商店买断 或 `cargo build --release --features full`。这是纯发布/文档改动，无代码逻辑改动。
+## 组件与依赖顺序
 
-## 现状 (2026-09-03 只读核查)
+```
+T1 纯逻辑核心 (update.rs 骨架: 版本比较 / 缓存 / 行模型 + 单测)
+   │
+   ├─→ T2 「版本」行显示当前版本号 (store 轨读包版本, 含回退)
+   │
+   └─→ T3 GitHub 轨: ureq 查 releases/latest + 缓存接线 + 行变「有新版本」+ 点击跳发布页
+       │
+       └─→ T4 设置按钮角标 (Stack 叠加主题色圆点)
 
-- **GitHub 唯一 release = v0.1.1**（2026-08-12，名称「增加反馈入口」），资产 = `danqing-pomodoro-v0.1.0-win-x64.zip`（2 下载，**旧全功能构建**——那时还没有 free/full/store 特性）。**没有任何 v0.2.0 release**。
-- 本地 `release-archives/pomodoro/` 已有 free / store / full 三个 v0.2.0 ZIP + sha256。
-- git HEAD = `489923e`；09-02 三处购买修复已提交（`64d27b1`）。工作区仅 docs 改动（`MEMORY.md`、`docs/ms-store-copy.md` 已改，两个新 doc）。**代码干净，无需改码**。
-- `tools/build_freemium.ps1` 一条命令产出 free（`--features` 空）/ store（`--features store`）/ full（`--features full`）三包。
+T5 商店轨: StoreContext 查更新 + 应用内拉更新 (依赖 T2 的包版本读取; 与 T3/T4 同文件故串行)
 
-## 架构决策
+T6 双 feature 门禁 + 文档收尾
+```
 
-| 决策 | 选择 | 理由 |
-|------|------|------|
-| GitHub v0.2.0 挂哪个包 | **free** zip (`danqing-pomodoro-free-v0.2.0-win-x64.zip`) + sha256 | 政策规定开箱 = 2 场景 |
-| 是否发 store/full 到 GitHub | **都不发** | store 的 IAP 需商店身份，独立 exe 无身份校验不过；full 正是政策要关掉的 |
-| 旧 v0.1.1 release | **保留不动**（Q1 待用户拍板） | 历史产物、2 下载、明确是旧版；发 v0.2.0 为 Latest 后它即非默认 |
-| 发布时机 | 现在发 v0.2.0（Q2 待用户拍板） | 政策已锁、一两分钟 gh 命令、与商店认证解耦 |
-| 完整版获取 | 商店买断 或 自行编译 | 与政策措辞一致 |
+T1 → T2/T3 是硬依赖（行模型先行）；T4 依赖 T3 的「有新版本」状态源；
+T5 只依赖 T2，但与 T3/T4 同改 `update.rs`/`main.rs`，串行避免冲突；T6 收尾。
 
-## 任务清单
+## 关键实现决策
 
-按依赖顺序，详见 `tasks/todo.md`：
-
-1. 重编并校验 free v0.2.0 包（保证与 HEAD `489923e` 一致）
-2. 发布 v0.2.0 GitHub release（挂 free zip + sha256，设为 Latest，body 写明口径）
-3. README 增「免费 vs 完整版」口径 + 下载段
-4. 核对 `ms-store-copy.md` 等口径与 policy 一致（应无需改）
-
-**Checkpoint（Task 2 后）：** `gh release view` 确认 v0.2.0 挂 free、为 Latest；v0.1.1 按 Q1 处理结果保留或已清。
-
-## 开放问题 (拍板后我才能决定任务细节)
-
-- **Q1** 旧 v0.1.1 的 v0.1.0 全功能资产怎么处置？—— (a) 保留原样（推荐：历史归档，2 下载）；还是 (b) 删除该资产，彻底关掉后门。
-- **Q2** v0.2.0 现在就发到 GitHub，还是等商店认证通过、两边同步发？—— 推荐现在发。
-- **Q3** free zip 是否重编保证与 HEAD 一致？—— 推荐重编（`build_freemium.ps1`，便宜且可验证 2 场景）。
+1. **ureq = "3.4"**（`default-features = false, features = ["rustls", "json"]`，已查 docs.rs 核实
+   feature 名）。普通依赖非 optional：store 构建也会编它但 cfg 不调用——比「反向 feature」简单，
+   编译成本可忽略。
+2. **GitHub API 必须带 User-Agent 头**（无 UA 直接 403——本次查 crates.io API 复现了同款）。
+   URL: `https://api.github.com/repos/14uncle/danqing-pomodoro/releases/latest`，取 `tag_name`。
+3. **后台→UI 通信复用购买链路模式**：检查线程写全局原子/锁状态，tick 轮询入 app 字段；
+   线程不 join，进程退出即终止（无害）。
+4. **商店轨版本号**：`Package.Current.Id.Version`；`cargo run --features store` 无包身份时
+   回退 `CARGO_PKG_VERSION` + 一行 warn（正好覆盖「非 MSIX 环境」全体，检查同样静默跳过）。
+5. **商店轨拉更新**：`GetAppAndOptionalStorePackageUpdatesAsync` 查 →
+   `RequestDownloadAndInstallStorePackageUpdatesAsync` 拉（系统对话框接管进度/重启）。
+   `IInitializeWithWindow` 挂属主 + 主窗口定位：从 `license::store` 提取 `pub(crate)` helper 复用，
+   不复制第三份。
+6. **角标**：`danqing::widget::Stack` 已存在（已核实 re-export），圆点叠加不占布局。
 
 ## 风险与缓解
 
-| 风险 | 影响 | 缓解 |
-|------|------|------|
-| 旧 v0.1.1 仍挂全功能 zip | 低（2 下载、历史版） | Q1 保留；发 v0.2.0 为 Latest 即非默认 |
-| free zip 与 HEAD 不一致 | 中（发错产物） | Task 1 重编 + sha256 + 手动验 2 场景 |
-| Release body 口径不清 | 低 | 发布前 pre-write body，声明免费版/完整版途径 |
-| 误发 store/full 包 | 高（政策回退） | 只传 free；gh release view 复核资产清单 |
+| # | 风险 | 缓解 |
+|---|------|------|
+| R1 | StoreContext 更新 API 行为只能 MSIX 侧载实测 | 复用 docs/ms-store-copy.md 侧载检查单；IAP 同款坑已有 memory |
+| R2 | ureq 3.x API 生疏写错 | build 前查 docs.rs 官方文档 (source-driven-development)，不凭记忆 |
+| R3 | 无包身份环境跑 store 构建崩溃 | 包版本读取失败回退 + warn；StoreContext 获取失败静默跳过 (约束 4) |
+| R4 | release panic="abort"，后台线程 panic 杀全进程 | 检查/更新线程全程 Result，无 unwrap/expect (IAP 链路同纪律) |
+| R5 | 角标挤压设置按钮布局 | Stack 叠加不参与主轴布局；沿用既有布局回归测试模式 |
 
-## 非目标
+## 验证检查点
 
-不改商店 freemium 定价 / 不动桌景 / 不启新 POC / 不改 `focus-history.json` / 不删改旧文章（产品仍开源免费）。
+- **T1 后**: `cargo test` 全绿（纯逻辑护网先成型）
+- **T3 后**: GitHub 轨端到端手动验证（真实 API 查一次 + 缓存注入伪造新版看提示 + 点击跳页）
+  —— 这是 GitHub 用户可见价值的最薄切片
+- **T5 后**: MSIX 侧载低于商店在售版本，验证提示 + 拉起系统更新 UI
+- **T6**: 默认与 `--features store` 两组合 `cargo clippy -- -D warnings` + `cargo test` 全绿
