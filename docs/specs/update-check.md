@@ -27,7 +27,7 @@
 - danqing UI 框架 (git 依赖, 本地 [patch] 联动), Theme token 取色, 不自造颜色
 - **新增依赖 (唯一)**: `ureq` (default-features = false, rustls) — 仅非 store 编译启用,
   全应用第一个网络依赖, 意图文档第 5 条约束已批准
-- **windows crate 新增 feature**: `Windows_ApplicationModel` (读包版本) — 仅 store 编译
+- **windows crate 新增 feature**: `ApplicationModel` (读包版本; 0.61 起 feature 名不带 Windows 前缀) — 仅 store 编译
 - 已有可复用依赖: `serde`/`serde_json` (解析 API 响应 + 缓存文件), `open` (跳发布页),
   `dirs` (缓存目录), `chrono` (24h 缓存判定)
 

@@ -1017,7 +1017,7 @@ fn version_status_widget(t: SceneTheme) -> impl widget::Widget {
                 .gap(t.spacing_xs())
                 .cross_center()
                 .child(Center::new(
-                    Text::bind(|_: &PomodoroApp| license::version_row().status.to_string())
+                    Text::bind(|_: &PomodoroApp| license::version_row().status)
                         .font_size(t.font_size_body())
                         .bind_color(|s: &PomodoroApp| s.palette().text_secondary),
                 ))
@@ -1025,7 +1025,7 @@ fn version_status_widget(t: SceneTheme) -> impl widget::Widget {
         )
         // 面板 1: 无操作 — 纯状态文案 (完整版用 accent 点亮, 购买中用次级色)
         .child(Center::new(
-            Text::bind(|_: &PomodoroApp| license::version_row().status.to_string())
+            Text::bind(|_: &PomodoroApp| license::version_row().status)
                 .font_size(t.font_size_body())
                 .bind_color(|s: &PomodoroApp| {
                     if license::is_full() {

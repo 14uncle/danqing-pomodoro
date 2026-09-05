@@ -119,8 +119,8 @@ pub fn purchase_state() -> PurchaseState {
 
 /// 设置面板「版本」行的展示模型 (纯函数, 与授权/购买状态一一对应)。
 pub struct VersionRow {
-    /// 状态文案。
-    pub status: &'static str,
+    /// 状态文案 (带版本号前缀, 如 "v0.2.1 · 免费版")。
+    pub status: String,
     /// 操作按钮文案; None = 不显示按钮 (完整版 / 购买中)。
     pub action: Option<&'static str>,
 }
@@ -129,10 +129,11 @@ pub struct VersionRow {
 ///
 /// 购买成功后 [`is_full`] 立即变 true, 行随之变「完整版 ✓」— 这本身就是购买反馈。
 pub fn version_row() -> VersionRow {
+    let ver = crate::update::current_version();
     #[cfg(feature = "full")]
     {
         VersionRow {
-            status: "完整版 ✓",
+            status: format!("v{ver} · 完整版 ✓"),
             action: None,
         }
     }
@@ -141,21 +142,21 @@ pub fn version_row() -> VersionRow {
         // 商店版运行时购买成功后 is_full() 翻 true; 走到这里的是免费态
         if is_full() {
             return VersionRow {
-                status: "完整版 ✓",
+                status: format!("v{ver} · 完整版 ✓"),
                 action: None,
             };
         }
         match purchase_state() {
             PurchaseState::Idle => VersionRow {
-                status: "免费版",
+                status: format!("v{ver} · 免费版"),
                 action: Some("解锁完整版"),
             },
             PurchaseState::Purchasing => VersionRow {
-                status: "购买中…",
+                status: format!("v{ver} · 购买中…"),
                 action: None,
             },
             PurchaseState::Failed => VersionRow {
-                status: "购买未完成",
+                status: format!("v{ver} · 购买未完成"),
                 action: Some("重试"),
             },
         }
@@ -531,27 +532,28 @@ mod tests {
 
     // === 版本行展示模型 (设置面板付费入口, 2026-09-01) ===
 
-    /// 免费版: 状态文案 + 升级按钮; 购买中隐藏按钮防重入; 失败可重试。
+    /// 免费版: 版本号 + 状态文案 + 升级按钮; 购买中隐藏按钮防重入; 失败可重试。
     /// (唯一读写 PURCHASE_STATE 的测试, 串行执行完并复位, 避免并行污染。)
     #[cfg(not(feature = "full"))]
     #[test]
     fn version_row_tracks_purchase_state() {
+        let ver = crate::update::current_version();
         // 空闲: 免费版 + 解锁入口
         PURCHASE_STATE.store(PURCHASE_IDLE, Ordering::Relaxed);
         let row = version_row();
-        assert_eq!(row.status, "免费版");
+        assert_eq!(row.status, format!("v{ver} · 免费版"));
         assert_eq!(row.action, Some("解锁完整版"));
 
         // 购买中: 按钮消失 (防重入), 只留状态文案
         PURCHASE_STATE.store(PURCHASE_PURCHASING, Ordering::Relaxed);
         let row = version_row();
-        assert_eq!(row.status, "购买中…");
+        assert_eq!(row.status, format!("v{ver} · 购买中…"));
         assert_eq!(row.action, None);
 
         // 失败: 提示 + 重试入口
         PURCHASE_STATE.store(PURCHASE_FAILED, Ordering::Relaxed);
         let row = version_row();
-        assert_eq!(row.status, "购买未完成");
+        assert_eq!(row.status, format!("v{ver} · 购买未完成"));
         assert_eq!(row.action, Some("重试"));
 
         // 复位: 回到初始形态
@@ -563,8 +565,9 @@ mod tests {
     #[cfg(feature = "full")]
     #[test]
     fn version_row_full_version() {
+        let ver = crate::update::current_version();
         let row = version_row();
-        assert_eq!(row.status, "完整版 ✓");
+        assert_eq!(row.status, format!("v{ver} · 完整版 ✓"));
         assert_eq!(row.action, None);
     }
 }

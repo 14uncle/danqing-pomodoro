@@ -35,6 +35,7 @@ windows-sys = { version = "0.59", features = ["Win32_UI_Input_KeyboardAndMouse",
 version = "0.61"
 features = [
     "Services_Store",
+    "ApplicationModel",
     "Win32_Foundation",
     "Win32_System_WinRT",
     "Win32_UI_Shell",

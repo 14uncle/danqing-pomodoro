@@ -20,6 +20,19 @@ pub const CACHE_TTL_SECS: u64 = 24 * 60 * 60;
 /// 版本号三元组 (major, minor, patch)。
 pub type VersionTriple = (u64, u64, u64);
 
+/// 当前版本号: GitHub 轨取编译期包版本, 商店轨取 MSIX 包身份版本
+/// (build_msix.ps1 的 -Version 独立于 Cargo.toml, 二进制自报不可信)。
+pub fn current_version() -> String {
+    #[cfg(not(feature = "store"))]
+    {
+        env!("CARGO_PKG_VERSION").to_string()
+    }
+    #[cfg(feature = "store")]
+    {
+        store::package_version()
+    }
+}
+
 /// 解析版本串: 容忍 `v0.2.1` / `0.2.1` 两种写法, 拒绝一切非法格式
 /// (段数不对、非数字、预发布后缀如 `0.2.1-beta` —— `/releases/latest` 本就不含预发布)。
 pub fn parse_version(s: &str) -> Option<VersionTriple> {
@@ -114,11 +127,44 @@ pub fn update_hint(current: &str, cache: Option<&CheckCache>) -> Option<UpdateHi
     })
 }
 
+// ---------------------------------------------------------------------------
+// 微软商店: 包身份版本读取
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "store")]
+mod store {
+    /// 读 MSIX 包身份版本 (Major.Minor.Build, 丢弃 build_msix.ps1 恒写 0 的 Revision);
+    /// 无包身份 (`cargo run --features store` 直跑) 回退编译期版本 + warn。
+    pub fn package_version() -> String {
+        let read = (|| -> windows::core::Result<String> {
+            let pkg = windows::ApplicationModel::Package::Current()?;
+            let version = pkg.Id()?.Version()?;
+            Ok(format!(
+                "{}.{}.{}",
+                version.Major, version.Minor, version.Build
+            ))
+        })();
+        match read {
+            Ok(version) => version,
+            Err(err) => {
+                log::warn!("无 MSIX 包身份, 版本号回退编译期值: {err}");
+                env!("CARGO_PKG_VERSION").to_string()
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     // --- parse_version ---
+
+    #[cfg(not(feature = "store"))]
+    #[test]
+    fn current_version_uses_cargo_pkg_version_on_github_track() {
+        assert_eq!(current_version(), env!("CARGO_PKG_VERSION"));
+    }
 
     #[test]
     fn parse_version_accepts_plain_and_v_prefixed() {

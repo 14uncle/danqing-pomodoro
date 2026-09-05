@@ -12,7 +12,7 @@
   - Verify: `cargo test` 全绿
   - Files: src/update.rs, src/main.rs (仅 `mod update;`)
 
-- [ ] Task 2: 「版本」行显示当前版本号
+- [x] Task 2: 「版本」行显示当前版本号
   - 内容: `update::current_version()`（非 store = `CARGO_PKG_VERSION`；store = 包版本，
     无包身份回退 + warn）；`license::VersionRow.status` 由 `&'static str` 改 `String`，
     文案变 `vX.Y.Z · 免费版` / `vX.Y.Z · 完整版 ✓`；windows crate 加 `Windows_ApplicationModel`
