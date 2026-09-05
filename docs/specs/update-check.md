@@ -2,7 +2,15 @@
 
 - **日期**: 2026-09-05
 - **意图来源**: [docs/intent/update-check.md](../intent/update-check.md) (interview-me 已确认, 含角标修订)
-- **状态**: spec 已评审 (2026-09-05), 进 plan 阶段
+- **状态**: 已落地 (2026-09-05, T1-T6 全绿; 商店轨链路待 MSIX 侧载实测 — 验证边界同 IAP)
+
+## 落地记录 (2026-09-05)
+
+- 角标实现为「设置」按钮内嵌 8px accent 圆点 (常占槽位、颜色显隐、零位移),
+  而非角角叠层: danqing `Box::paint` 填满父给区域且无 `Align` 原语, 真角标需框架层改动 (备案)。
+- `IIterable<引用类型>` 需 `Vec<Option<T>>` 转换 (T::Default = Option<T>), 与 HSTRING 值类型直转不同。
+- 已知褶皱: 两轨共用 update-check.json 无轨道字段, 换轨用户 24h 内可能看到上轨缓存结果, 自愈 (备案, 未做)。
+- 既有问题暴露: `--all-features` (store+full 非产品组合) 下 `STORE_URL` 死代码, 非本次引入 (备案, 未动)。
 
 ## Objective
 

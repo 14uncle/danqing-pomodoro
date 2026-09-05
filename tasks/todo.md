@@ -46,7 +46,7 @@
     (沿用 docs/ms-store-copy.md 检查单)
   - Files: src/update.rs, src/license.rs, src/main.rs
 
-- [ ] Task 6: 门禁 + 收尾
+- [x] Task 6: 门禁 + 收尾
   - 内容: 双 feature 组合 fmt/clippy/test 全绿；spec 状态更新为已落地；MEMORY.md 索引行
     从「待进 spec」改为已落地
   - Acceptance: 两组合全绿；文档与代码一致

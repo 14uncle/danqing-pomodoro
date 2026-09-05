@@ -9,6 +9,11 @@
 - [微软商店上架工作流](docs/ms-store-workflow.md) — 父应用 + add-on 提报逐 tab 步骤 (定价0=免费 / runFullTrust 强制隐私走文本 / IARC 数字商品=是 / 硬顺序: 父应用先发布); 踩坑含 7 关键词幽灵第8、自由版统计走浏览器; 2026-09-03 首走成稿 备案在 docs/ms-store-copy.md
 - [MSIX 侧载测试工作流与坑](memory/msix-sideload-workflow.md) — ps1 中文必须 BOM / manifest 必须无 BOM / Msixvc 只认 LocalMachine 信任 / Cert: PSDrive 本机不可用; 2026-09-01 实测
 - [商店 IAP 购买链路的 windows crate 坑](memory/store-iap-windows-crate-pitfalls.md) — NULL 句柄被包装成 Err (is_err 判空) / RequestPurchaseAsync 走 StoreProduct / IInitializeWithWindow 挂属主; 2026-09-01 评审揪出
+- [双轨应用内更新感知](docs/intent/update-check.md) — 商店轨 StoreContext 应用内拉更新 / GitHub 轨静默查 Releases 告知+跳发布页; store feature 编译时隔离轨道; 设置页版本行+设置按钮角标; 2026-09-05 落地 (spec: docs/specs/update-check.md), 商店轨待侧载实测
+
+## 性能/负载
+
+- [Continuous 模式 GPU 负载与风扇](memory/continuous-mode-gpu-load-fan.md) — 启动风扇狂转=峰值非异常; 稳态 CPU 5%/GPU 26% 是 60fps 明码标价, 隐藏≈0; 2026-09-04 决定不降帧
 
 ## 音频 (rodio 环境音)
 
