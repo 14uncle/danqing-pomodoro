@@ -147,6 +147,7 @@ add-on 提报: [定价] [Store 一览] [提交选项] → 提交认证 → 发�
 9. **误建草稿**: 别用「新建应用」建重复预留; 在已有产品下填写。若误建需删草稿。
 10. **add-on 图标卡 300×300**: add-on Store 一览图标下限 300×300, 仓库原有最大 256px 被拦。按 `pomodoro.svg` 几何 4× 超采样重渲出 `pomodoro_300.png` (Pillow, 无 SVG 渲染器依赖)。
 11. **任务栏图标蓝底板 (2026-09-04, 最大坑)**: 商店版任务栏图标被垫 Windows 默认蓝底。排查走遍 BackgroundColor(transparent/#1A0F0A)、DefaultTile/SplashScreen 有无、targetsize/scale 资产家族、清图标缓存、PNG 脏透明像素——**全都无效**。真正根因: **MSIX 包缺 `resources.pri`**(MakePri 生成)。shell 靠它做「限定资源解析」才知道图标有 scale/targetsize/altform-unplated 变体可挑; 缺了它只能拿基础 `Square44x44Logo.png` 垫 BackgroundColor 底板。修复: `build_msix.ps1` 打包前跑 `makepri createconfig + makepri new` 生成 `resources.pri` + `resources.scale-*.pri` 并打进包 (对照 ScreenToGif / rufus `packme.cmd` 均含此文件且裸图标)。⚠️ 侧载测试时同版本号重装不刷新图标缓存, 每次验证必须 bump 版本号。
+12. **商店页「支持」= mailto 死路 (2026-09-05)**: 「属性→支持信息」同时填了邮箱+URL 时, 商店页发行商信息的「支持」优先用 **mailto: 邮箱**。无默认邮件客户端的机器 (国内大多数) 点开是空白页/空白浏览器 (网页商店新页签 mailto: 空内容; 桌面商店拉起空浏览器)。对策: 只留 URL (GitHub issues), 删掉邮箱 —— 改属性是纯元数据提交不用新包, 但要等进行中的提交认证完才能改。
 
 ---
 
