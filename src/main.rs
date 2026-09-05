@@ -1107,40 +1107,48 @@ fn version_panel_index(has_update: bool, license_action_is_none: bool) -> usize 
     }
 }
 
-/// 更新按钮：幽灵样式, 文案按轨道 (前往下载/更新), 点击分派更新动作。
-fn update_button(t: SceneTheme) -> Button {
+/// 「版本」行动作按钮：幽灵样式 + accent 绑定文案 (升级/更新共用)。
+fn version_action_button(
+    t: SceneTheme,
+    text: impl Fn(&PomodoroApp) -> String + 'static,
+    msg: Msg,
+) -> Button {
     Button::themed(
         &t,
-        Text::bind(|_: &PomodoroApp| {
-            update::current_hint()
-                .map(|h| h.action)
-                .unwrap_or_default()
-                .to_string()
-        })
-        .bind_color(|s: &PomodoroApp| s.palette().accent),
+        Text::bind(text).bind_color(|s: &PomodoroApp| s.palette().accent),
     )
     .bind_color(|_: &PomodoroApp| Color::TRANSPARENT)
     .bind_hover_color(|s: &PomodoroApp| s.palette().surface)
     .bind_focus_color(|s: &PomodoroApp| s.palette().accent)
-    .on_click(|| Msg::UpdateAction)
+    .on_click(move || msg)
 }
 
 /// 升级按钮：幽灵样式, 文案随购买状态 (解锁完整版/重试), 点击发起购买。
 fn upgrade_button(t: SceneTheme) -> Button {
-    Button::themed(
-        &t,
-        Text::bind(|_: &PomodoroApp| {
+    version_action_button(
+        t,
+        |_: &PomodoroApp| {
             license::version_row()
                 .action
                 .unwrap_or_default()
                 .to_string()
-        })
-        .bind_color(|s: &PomodoroApp| s.palette().accent),
+        },
+        Msg::Upgrade,
     )
-    .bind_color(|_: &PomodoroApp| Color::TRANSPARENT)
-    .bind_hover_color(|s: &PomodoroApp| s.palette().surface)
-    .bind_focus_color(|s: &PomodoroApp| s.palette().accent)
-    .on_click(|| Msg::Upgrade)
+}
+
+/// 更新按钮：幽灵样式, 文案按轨道 (前往下载/更新), 点击分派更新动作。
+fn update_button(t: SceneTheme) -> Button {
+    version_action_button(
+        t,
+        |_: &PomodoroApp| {
+            update::current_hint()
+                .map(|h| h.action)
+                .unwrap_or_default()
+                .to_string()
+        },
+        Msg::UpdateAction,
+    )
 }
 
 /// 设置面板浮层：居中玻璃卡片，调整专注/短休/长休时长。
