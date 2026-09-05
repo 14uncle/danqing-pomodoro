@@ -324,10 +324,15 @@ pub fn spawn_check() {
                 checked_version: current_version().to_string(),
                 status,
             };
-            if let Some(path) = cache_path() {
-                if let Err(err) = save_cache_to(&path, &cache) {
-                    log::warn!("更新检查缓存写入失败: {err}");
+            match cache_path() {
+                Some(path) => {
+                    if let Err(err) = save_cache_to(&path, &cache) {
+                        log::warn!("更新检查缓存写入失败: {err}");
+                    }
                 }
+                // 刚侧载的包首启可能拿不到配置目录 (包状态未初始化完):
+                // 跳过落盘, 下次启动重查 — 2026-09-05 复跑实测。
+                None => log::warn!("配置目录不可得, 更新检查结果不落盘"),
             }
             publish(Some(cache));
         }

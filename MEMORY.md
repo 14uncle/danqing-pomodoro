@@ -10,7 +10,7 @@
 - [MSIX 侧载测试工作流与坑](memory/msix-sideload-workflow.md) — ps1 中文必须 BOM / manifest 必须无 BOM / Msixvc 只认 LocalMachine 信任 / Cert: PSDrive 本机不可用; 2026-09-01 实测
 - [商店 IAP 购买链路的 windows crate 坑](memory/store-iap-windows-crate-pitfalls.md) — NULL 句柄被包装成 Err (is_err 判空) / RequestPurchaseAsync 走 StoreProduct / IInitializeWithWindow 挂属主; 2026-09-01 评审揪出
 - [商店更新检查 API 的坑](memory/store-update-api-pitfalls.md) — StorePackageUpdate.Package 是当前包不暴露新版本号 / 刚侧载的包商店有注册延迟 / Size() 计数日志做诊断桩; 2026-09-05 侧载实测揪出
-- [双轨应用内更新感知](docs/intent/update-check.md) — 商店轨 StoreContext 应用内拉更新 / GitHub 轨静默查 Releases 告知+跳发布页; store feature 编译时隔离轨道; 设置页版本行+设置按钮角标; 2026-09-05 落地 (spec: docs/specs/update-check.md), 商店轨待侧载实测
+- [双轨应用内更新感知](docs/intent/update-check.md) — 商店轨 StoreContext 应用内拉更新 / GitHub 轨静默查 Releases 告知+跳发布页; store feature 编译时隔离轨道; 设置页版本行+设置按钮角标; 2026-09-05 落地并双轨实测通过 (spec: docs/specs/update-check.md)
 
 ## 性能/负载
 
