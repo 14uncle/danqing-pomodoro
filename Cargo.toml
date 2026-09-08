@@ -17,7 +17,8 @@ store = ["dep:windows", "dep:windows-collections"]
 [dependencies]
 # 提交状态固定为 git 依赖 (danqing 已公开): 仓库自洽 + Cargo.lock 钉住 rev 保证发布可复现。
 # 本地联动开发框架时的临时切换见 DEVELOPMENT.md「依赖机制」。
-danqing = { git = "https://github.com/14uncle/danqing" }
+# update feature: 应用内更新检查核心 + GitHub 轨运输 (商店轨留产品侧, 见 docs/specs/update-check.md)。
+danqing = { git = "https://github.com/14uncle/danqing", features = ["update"] }
 chrono = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -27,8 +28,7 @@ log = "0.4"
 anyhow = "1"
 open = "5"
 urlencoding = "2"
-# GitHub 轨更新检查 (仅非 store 编译时调用; 全应用唯一网络依赖, 见 docs/specs/update-check.md)
-ureq = { version = "3.4", default-features = false, features = ["rustls", "json"] }
+# 应用内更新检查的网络栈随 danqing update feature 进入 (产品不再直接依赖 ureq)。
 windows-sys = { version = "0.59", features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_System_Diagnostics_Debug"] }
 # 微软商店 IAP (仅 store feature 启用时引入)
 # Win32_UI_Shell/WinRT: 购买对话框属主绑定 (IInitializeWithWindow) + COM 单元初始化;

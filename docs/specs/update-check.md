@@ -47,6 +47,22 @@ KnownVersion(GitHub 轨) / UnknownVersion(商店轨)), 商店轨提示「有新�
 另实测: 刚侧载的包首启 `dirs::config_dir()` 瞬态不可得, 缓存落盘静默跳过且自愈,
 该分支已补 warn 日志。
 
+## 框架下沉 (2026-09-08)
+
+- 纯逻辑 (版本对比/24h TTL 缓存+换版作废/提示模型) 与 GitHub 轨运输整体迁入
+  `danqing::update` (框架 `update` feature, danqing 963c84a); 产品侧 update.rs 只留
+  轨道分派 + 商店轨 (MSIX 包身份/StoreContext 查拉) + `UpdateSpec` 身份注入,
+  对 main.rs/license.rs 的出口签名不变。
+- 缓存文件换名: `update-check.json` → `update-check-14uncle-danqing-pomodoro.json`
+  (框架按 repo 分词防多产品互覆; 旧文件无害残留, 首启重查一次自愈)。
+  上文「两轨共用 update-check.json」褶皱的跨产品维度随之消解 (轨道维度仍在)。
+- 产品不再直接依赖 ureq (网络栈随框架 feature 进入); 评审修复 round 1 里
+  「ureq 无条件依赖」的形态判断作废 —— 现在连依赖本身都来自框架。
+- lock 更新手法教训: 这次用 `cargo update -p danqing` 触发部分重解, 把 cpal/
+  gpu-allocator 的 windows 边从 0.62.2 错配回 0.61.3 (与 wgpu-hal 的 windows-core
+  0.62.2 漂移, wgpu-hal 编译炸); 正确姿势是改完 manifest 直接 `cargo check`
+  让 cargo 最小重解 (lock diff 仅 danqing +5 行依赖/pomodoro -1 行 ureq)。
+
 ## Objective
 
 两条分发轨各自获得应用内更新感知, 用户不离开应用就知道「我在哪个版本、有没有新版」。
