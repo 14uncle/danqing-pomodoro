@@ -18,7 +18,7 @@ store = ["dep:windows", "dep:windows-collections"]
 # 提交状态固定为 git 依赖 (danqing 已公开): 仓库自洽 + Cargo.lock 钉住 rev 保证发布可复现。
 # 本地联动开发框架时的临时切换见 DEVELOPMENT.md「依赖机制」。
 # update feature: 应用内更新检查核心 + GitHub 轨运输 (商店轨留产品侧, 见 docs/specs/update-check.md)。
-danqing = { git = "https://github.com/14uncle/danqing", features = ["update"] }
+danqing = { git = "https://github.com/14uncle/danqing", features = ["update", "persist"] }
 chrono = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
