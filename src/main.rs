@@ -30,8 +30,8 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use danqing::widget::{
-    self, Box as UiBox, Button, Center, CloseButton, Column, LogoKind, MultiPanel, Node, Padding,
-    Row, Stack, Text, TitleBar,
+    self, Box as UiBox, Button, Center, CloseButton, Column, LogoKind, MultiPanel, Node, Overlay,
+    Padding, Row, Stack, Text, TitleBar,
 };
 use danqing::{
     AnimationCtx, App, BackgroundConfig, BackgroundFrame, Color, Crossfade, Cue, CueTiming, Easing,
@@ -541,15 +541,12 @@ impl App for PomodoroApp {
                 .child(
                     MultiPanel::new()
                         .child(content_column(t))
-                        .child(
-                            // 额外包裹一层 Padding 避免焦点路径
-                            // 在主面板和设置面板间碰撞：
-                            // 同索引路径会命中不同组件导致
-                            // FocusOut 无法送达隐藏面板内的旧焦点。
-                            Padding::new(Edges::ZERO, settings_panel(t)),
-                        )
-                        .child(Padding::new(Edges::ZERO, stats_panel(t)))
-                        .child(Padding::new(Edges::ZERO, report_panel(t)))
+                        // 面板即 Overlay: 关态 children 为空 + 关层边沿 reset_focus,
+                        // 焦点路径碰撞/FocusOut 不可达的旧隐患由组件门控内化,
+                        // 不再需要 Padding 垫层规避。
+                        .child(settings_panel(t))
+                        .child(stats_panel(t))
+                        .child(report_panel(t))
                         .bind(|s: &PomodoroApp| {
                             if s.report_open {
                                 3
@@ -1154,54 +1151,53 @@ fn update_button(t: SceneTheme) -> Button {
     )
 }
 
-/// 设置面板浮层：居中玻璃卡片，调整专注/短休/长休时长。
+/// 设置面板浮层：danqing::Overlay 承载 scrim/居中/模态门控 (簇C 下沉)。
 fn settings_panel(t: SceneTheme) -> impl widget::Widget {
-    // 半透明遮罩 + 居中玻璃卡片
-    Stack::new().child(UiBox::new(t.scrim()).radius(0.0)).child(
-        Center::new(
-            UiBox::new(Color::TRANSPARENT)
-                .bind_color(|s: &PomodoroApp| s.palette().surface)
-                .radius(t.radius_lg())
-                .width(SETTINGS_CARD_WIDTH)
-                .child(Padding::new(
-                    Edges::all(t.spacing_xl()),
-                    Column::new()
-                        .gap(t.spacing_lg())
-                        .child(settings_header(t))
-                        .child(stepper_row(
-                            t,
-                            "专注时长",
-                            |s: &PomodoroApp| s.timer.config().focus_secs / 60,
-                            Msg::DecFocus,
-                            Msg::IncFocus,
-                        ))
-                        .child(stepper_row(
-                            t,
-                            "\u{3000}短休息",
-                            |s: &PomodoroApp| s.timer.config().break_secs / 60,
-                            Msg::DecBreak,
-                            Msg::IncBreak,
-                        ))
-                        .child(stepper_row(
-                            t,
-                            "\u{3000}长休息",
-                            |s: &PomodoroApp| s.timer.config().long_break_secs / 60,
-                            Msg::DecLongBreak,
-                            Msg::IncLongBreak,
-                        ))
-                        .child(sound_setting_row(t))
-                        .child(version_setting_row(t))
-                        .child(ghost_button(t, "重置计时", Msg::ResetConfig))
-                        .child(ghost_button(t, "问题反馈", Msg::OpenFeedback))
-                        .child(
-                            Text::new("变更在下一阶段生效")
-                                .font_size(t.font_size_small())
-                                .bind_color(|s: &PomodoroApp| s.palette().text_secondary),
-                        ),
-                )),
-        )
-        .fill_max(),
-    )
+    Overlay::themed(&t, settings_card(t)).bind_open(|s: &PomodoroApp| s.settings_open)
+}
+
+/// 设置面板卡片 (Overlay 内容槽)：居中玻璃卡片，调整专注/短休/长休时长。
+fn settings_card(t: SceneTheme) -> impl widget::Widget {
+    UiBox::new(Color::TRANSPARENT)
+        .bind_color(|s: &PomodoroApp| s.palette().surface)
+        .radius(t.radius_lg())
+        .width(SETTINGS_CARD_WIDTH)
+        .child(Padding::new(
+            Edges::all(t.spacing_xl()),
+            Column::new()
+                .gap(t.spacing_lg())
+                .child(settings_header(t))
+                .child(stepper_row(
+                    t,
+                    "专注时长",
+                    |s: &PomodoroApp| s.timer.config().focus_secs / 60,
+                    Msg::DecFocus,
+                    Msg::IncFocus,
+                ))
+                .child(stepper_row(
+                    t,
+                    "\u{3000}短休息",
+                    |s: &PomodoroApp| s.timer.config().break_secs / 60,
+                    Msg::DecBreak,
+                    Msg::IncBreak,
+                ))
+                .child(stepper_row(
+                    t,
+                    "\u{3000}长休息",
+                    |s: &PomodoroApp| s.timer.config().long_break_secs / 60,
+                    Msg::DecLongBreak,
+                    Msg::IncLongBreak,
+                ))
+                .child(sound_setting_row(t))
+                .child(version_setting_row(t))
+                .child(ghost_button(t, "重置计时", Msg::ResetConfig))
+                .child(ghost_button(t, "问题反馈", Msg::OpenFeedback))
+                .child(
+                    Text::new("变更在下一阶段生效")
+                        .font_size(t.font_size_small())
+                        .bind_color(|s: &PomodoroApp| s.palette().text_secondary),
+                ),
+        ))
 }
 
 /// 设置面板标题行："计时设置" + 固定间距 + 关闭按钮。
@@ -1263,34 +1259,34 @@ fn stepper_row(
         .child(Center::new(ghost_button(t, "+", inc_msg)))
 }
 
-/// 统计面板浮层：居中玻璃卡片，展示 今日 / 本周 / 累计 专注 + 导出按钮。
+/// 统计面板浮层：danqing::Overlay 承载 scrim/居中/模态门控 (簇C 下沉)。
 fn stats_panel(t: SceneTheme) -> impl widget::Widget {
-    Stack::new().child(UiBox::new(t.scrim()).radius(0.0)).child(
-        Center::new(
-            UiBox::new(Color::TRANSPARENT)
-                .bind_color(|s: &PomodoroApp| s.palette().surface)
-                .radius(t.radius_lg())
-                .width(SETTINGS_CARD_WIDTH)
-                .child(Padding::new(
-                    Edges::all(t.spacing_xl()),
-                    Column::new()
-                        .gap(t.spacing_lg())
-                        .child(stats_header(t))
-                        .child(stat_row(t, "今日", |s| format!("{} 次", s.today_count)))
-                        .child(stat_row(t, "近 7 天", |s| {
-                            let (count, secs) = s.history.week_stats(current_wall_secs());
-                            format!("{count} 次 · {}", format_duration(secs))
-                        }))
-                        .child(stat_row(t, "累计", |s| {
-                            let (count, secs) = s.history.total_stats();
-                            format!("{count} 次 · {}", format_duration(secs))
-                        }))
-                        .child(export_actions(t))
-                        .child(export_notice_row(t)),
-                )),
-        )
-        .fill_max(),
-    )
+    Overlay::themed(&t, stats_card(t)).bind_open(|s: &PomodoroApp| s.stats_open)
+}
+
+/// 统计面板卡片 (Overlay 内容槽)：居中玻璃卡片，展示 今日 / 本周 / 累计 专注 + 导出按钮。
+fn stats_card(t: SceneTheme) -> impl widget::Widget {
+    UiBox::new(Color::TRANSPARENT)
+        .bind_color(|s: &PomodoroApp| s.palette().surface)
+        .radius(t.radius_lg())
+        .width(SETTINGS_CARD_WIDTH)
+        .child(Padding::new(
+            Edges::all(t.spacing_xl()),
+            Column::new()
+                .gap(t.spacing_lg())
+                .child(stats_header(t))
+                .child(stat_row(t, "今日", |s| format!("{} 次", s.today_count)))
+                .child(stat_row(t, "近 7 天", |s| {
+                    let (count, secs) = s.history.week_stats(current_wall_secs());
+                    format!("{count} 次 · {}", format_duration(secs))
+                }))
+                .child(stat_row(t, "累计", |s| {
+                    let (count, secs) = s.history.total_stats();
+                    format!("{count} 次 · {}", format_duration(secs))
+                }))
+                .child(export_actions(t))
+                .child(export_notice_row(t)),
+        ))
 }
 
 /// 统计面板导出操作区：「导出 CSV」按钮 + (已导出过时)「打开所在目录」按钮。
@@ -1443,41 +1439,41 @@ fn current_year() -> u32 {
     chrono::Local::now().year() as u32
 }
 
-/// 年度报告面板浮层：居中玻璃卡片，深度洞察
-/// (当前年汇总 + 场景分布 + 近 12 月趋势)。
+/// 年度报告面板浮层：danqing::Overlay 承载 scrim/居中/模态门控 (簇C 下沉)。
 fn report_panel(t: SceneTheme) -> impl widget::Widget {
-    Stack::new().child(UiBox::new(t.scrim()).radius(0.0)).child(
-        Center::new(
-            UiBox::new(Color::TRANSPARENT)
-                .bind_color(|s: &PomodoroApp| s.palette().surface)
-                .radius(t.radius_lg())
-                .width(REPORT_CARD_WIDTH)
-                .child(Padding::new(
-                    Edges::all(t.spacing_xl()),
-                    Column::new()
-                        .gap(t.spacing_lg())
-                        .child(report_header(t))
-                        .child(section_label(t, "本年"))
-                        .child(stat_row(t, "专注时长", |s| {
-                            format_duration(s.history.year_summary(current_year()).total_secs)
-                        }))
-                        .child(stat_row(t, "轮次", |s| {
-                            format!(
-                                "{} 次",
-                                s.history.year_summary(current_year()).session_count
-                            )
-                        }))
-                        .child(stat_row(t, "活跃天数", |s| {
-                            format!("{} 天", s.history.year_summary(current_year()).active_days)
-                        }))
-                        .child(section_label(t, "场景分布"))
-                        .child(scene_distribution_rows(t))
-                        .child(section_label(t, "近 12 月趋势"))
-                        .child(month_trend_rows(t)),
-                )),
-        )
-        .fill_max(),
-    )
+    Overlay::themed(&t, report_card(t)).bind_open(|s: &PomodoroApp| s.report_open)
+}
+
+/// 年度报告面板卡片 (Overlay 内容槽)：居中玻璃卡片，深度洞察
+/// (当前年汇总 + 场景分布 + 近 12 月趋势)。
+fn report_card(t: SceneTheme) -> impl widget::Widget {
+    UiBox::new(Color::TRANSPARENT)
+        .bind_color(|s: &PomodoroApp| s.palette().surface)
+        .radius(t.radius_lg())
+        .width(REPORT_CARD_WIDTH)
+        .child(Padding::new(
+            Edges::all(t.spacing_xl()),
+            Column::new()
+                .gap(t.spacing_lg())
+                .child(report_header(t))
+                .child(section_label(t, "本年"))
+                .child(stat_row(t, "专注时长", |s| {
+                    format_duration(s.history.year_summary(current_year()).total_secs)
+                }))
+                .child(stat_row(t, "轮次", |s| {
+                    format!(
+                        "{} 次",
+                        s.history.year_summary(current_year()).session_count
+                    )
+                }))
+                .child(stat_row(t, "活跃天数", |s| {
+                    format!("{} 天", s.history.year_summary(current_year()).active_days)
+                }))
+                .child(section_label(t, "场景分布"))
+                .child(scene_distribution_rows(t))
+                .child(section_label(t, "近 12 月趋势"))
+                .child(month_trend_rows(t)),
+        ))
 }
 
 /// 报告面板分区标题。
