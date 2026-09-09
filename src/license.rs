@@ -62,7 +62,7 @@ pub const FREE_SCENE_COUNT: usize = 2;
 pub const STORE_URL: &str = "https://www.microsoft.com/store/apps/9P3W6W1SR6DS";
 
 /// 检查指定场景索引是否可用。
-#[expect(dead_code)]
+#[allow(dead_code)] // 仅测试引用, expect 在 --all-targets 下落空
 pub fn is_scene_available(index: usize) -> bool {
     is_full() || index < FREE_SCENE_COUNT
 }
