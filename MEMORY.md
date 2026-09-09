@@ -23,4 +23,5 @@
 
 ## 构建/工具链
 
+- [测试口令裸 cargo test (无 lib target)](memory/cargo-test-no-lib-target.md) -- --lib --tests 报 no library targets; 跨仓惯性会踩, Bash cwd 复位不规律须显式 cd
 - [clippy --all-targets 炸 license.rs:65 (预存)](memory/clippy-all-targets-license-expect.md) — is_scene_available 仅测试引用致 expect(dead_code) 落空; 门禁用无 --all-targets 惯例命令, 根治待裁决勿顺手改
