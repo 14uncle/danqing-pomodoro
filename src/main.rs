@@ -14,9 +14,6 @@
 
 mod ambient;
 mod audio;
-mod fader;
-mod flash;
-mod hint;
 mod license;
 mod motion;
 mod scenes;
@@ -37,13 +34,11 @@ use danqing::widget::{
     Row, Stack, Text, TitleBar,
 };
 use danqing::{
-    AnimationCtx, App, BackgroundConfig, BackgroundFrame, Color, Easing, Edges, Event, Key,
-    LightTheme, NamedKey, ScaleMode, ScenePalette, SceneTheme, Size, Theme, WindowAction,
-    WindowConfig, WindowEventSender, hotkey_ids, shortcut_for_id, tray_action_ids,
+    AnimationCtx, App, BackgroundConfig, BackgroundFrame, Color, Crossfade, Cue, CueTiming, Easing,
+    Edges, Event, Key, LightTheme, NamedKey, Pulse, ScaleMode, ScenePalette, SceneTheme, Size,
+    Theme, Tween, WindowAction, WindowConfig, WindowEventSender, hotkey_ids, shortcut_for_id,
+    tray_action_ids,
 };
-use fader::SceneFader;
-use flash::FlashOverlay;
-use hint::ShortcutHintOverlay;
 use scenes::SCENES;
 use state::{PomodoroState, RunState, current_wall_secs, load_state, save_state};
 use stats::{FocusHistory, SessionRecord};
@@ -80,7 +75,7 @@ struct PomodoroApp {
     /// 注入时间轴：自应用启动的累计时间 (由 tick 心跳推进)。
     now: Duration,
     /// 场景交叉淡化器 (含当前场景索引)。
-    fader: SceneFader,
+    fader: Crossfade,
     /// 启动时 elapsed 偏移 (持久化恢复); 0 表示全新会话。
     now_offset: Duration,
     /// 状态脏旗标：update 触发，tick 节流落盘后清零。
@@ -90,9 +85,9 @@ struct PomodoroApp {
     /// 最近一次跨日检查的 now 值 (1Hz 节流基准)。
     last_date_check: Duration,
     /// 完成反馈视觉脉冲 (阶段流转触发)。
-    flash: FlashOverlay,
+    flash: Pulse,
     /// 首次启动快捷键提示 (一过性 fade-in/hold/fade-out 状态机)。
-    hint: ShortcutHintOverlay,
+    hint: Cue,
     /// 当前持久化的「已见过快捷键提示」旗标 (snapshot_state 直接读)。
     has_seen_shortcut_hint: bool,
     /// 今日计数所属日期 (YYYY-MM-DD, 与 today_count 配对)。
@@ -105,8 +100,8 @@ struct PomodoroApp {
     ambient_player: ambient::AmbientPlayer,
     /// 全局环境音开关 (false = 静音所有场景音景)。
     sound_on: bool,
-    /// 场景动效沉降包络 (纯逻辑：暂停 500ms 淡出 / 恢复淡入)。
-    motion_envelope: motion::MotionEnvelope,
+    /// 场景动效沉降补间 (纯逻辑：暂停 500ms 淡出 / 恢复淡入)。
+    motion_envelope: Tween,
     /// 最近 tick 算出的动效包络值 (`background_frame` 只读)。
     motion_gain: f32,
     /// 雨钟 (秒): 雨丝下落时间轴。暂停时定格可见 (不随包络沉降),
@@ -191,21 +186,21 @@ impl PomodoroApp {
         Self {
             timer: Pomodoro::new(),
             now: Duration::ZERO,
-            fader: SceneFader::new(0, FADE_DURATION),
+            fader: Crossfade::new(0, FADE_DURATION),
             now_offset: Duration::ZERO,
             state_dirty: true,
             last_save_at: Duration::ZERO,
             last_date_check: Duration::ZERO,
-            flash: FlashOverlay::new(FLASH_DURATION),
+            flash: Pulse::new(FLASH_DURATION),
             // 全新会话：触发一次性快捷键提示，同时标记为已见 (节流落盘后 JSON 持久化)。
-            hint: ShortcutHintOverlay::triggered_at(Duration::ZERO),
+            hint: triggered_cue(Duration::ZERO),
             has_seen_shortcut_hint: true,
             today_date: today::today_string(),
             today_count: 0,
             ambient_mixer: ambient::AmbientMixer::new(),
             ambient_player: ambient::AmbientPlayer::new(),
             sound_on: true,
-            motion_envelope: motion::MotionEnvelope::new(),
+            motion_envelope: Tween::new(motion::SETTLE_DURATION, Easing::Linear),
             motion_gain: 0.0,
             rain_clock: 0.0,
             window_sender: None,
@@ -252,9 +247,9 @@ impl PomodoroApp {
             license::FREE_SCENE_COUNT
         };
         let fader = if state.current_scene < max_scene {
-            SceneFader::new(state.current_scene, FADE_DURATION)
+            Crossfade::new(state.current_scene, FADE_DURATION)
         } else {
-            SceneFader::new(0, FADE_DURATION)
+            Crossfade::new(0, FADE_DURATION)
         };
         // 一次性快捷键提示：没看过就触发一次，触发即标记为已见。
         let should_show_hint = !state.has_seen_shortcut_hint;
@@ -269,11 +264,11 @@ impl PomodoroApp {
             state_dirty: true,
             last_save_at: now_offset,
             last_date_check: now_offset,
-            flash: FlashOverlay::new(FLASH_DURATION),
+            flash: Pulse::new(FLASH_DURATION),
             hint: if should_show_hint {
-                ShortcutHintOverlay::triggered_at(now_offset)
+                triggered_cue(now_offset)
             } else {
-                ShortcutHintOverlay::idle()
+                Cue::new(CueTiming::default())
             },
             has_seen_shortcut_hint: true,
             today_date: today,
@@ -281,7 +276,7 @@ impl PomodoroApp {
             ambient_mixer: ambient::AmbientMixer::new(),
             ambient_player: ambient::AmbientPlayer::new(),
             sound_on: state.sound_on,
-            motion_envelope: motion::MotionEnvelope::new(),
+            motion_envelope: Tween::new(motion::SETTLE_DURATION, Easing::Linear),
             motion_gain: 0.0,
             rain_clock: 0.0,
             window_sender: None,
@@ -340,7 +335,7 @@ impl PomodoroApp {
     /// 当前视觉调色板：淡化中为两端调色板的插值 (色调随画面同步流动);
     /// 暂停时整体降饱和 70% (含控件底色与文字色), 视觉上明显区分。
     fn palette(&self) -> ScenePalette {
-        let (from, to, t) = self.fader.frame(self.now, |t| FADE_EASING.eval(t));
+        let (from, to, t) = self.fader.frame(self.now, FADE_EASING);
         let base = SCENES[from].palette.lerp(SCENES[to].palette, t);
         if self.timer.is_running() {
             base
@@ -663,7 +658,7 @@ impl App for PomodoroApp {
         }
         // 环境音：与视觉淡化同源 (from/to/fade), 300ms 增益包络;
         // 休息期 duck 沉降 (世界退远一步), 懒初始化 + 静默降级。
-        let (from, to, fade) = self.fader.frame(self.now, |t| FADE_EASING.eval(t));
+        let (from, to, fade) = self.fader.frame(self.now, FADE_EASING);
         let duck = match self.timer.phase() {
             Phase::Focus => 1.0,
             Phase::Break | Phase::LongBreak => ambient::BREAK_DUCK,
@@ -679,14 +674,15 @@ impl App for PomodoroApp {
         );
         self.ambient_player.apply(frame);
         // 场景动效：与音频同潮汐契约 — 运行全量，暂停 500ms 沉降 (视觉独立时长)。
-        self.motion_gain = self.motion_envelope.gain(self.timer.is_running(), self.now);
+        let motion_target = if self.timer.is_running() { 1.0 } else { 0.0 };
+        self.motion_gain = self.motion_envelope.value(self.now, motion_target);
         // 雨钟：雨丝定格可见 (2026-07-29 用户裁定：暂停显示雨丝，不随包络沉降);
         // 包络只推进下落时间 — 暂停 500ms 减速冻结，恢复 500ms 加速续走，无跳变。
         self.rain_clock += dt.as_secs_f32() * self.motion_gain;
     }
 
     fn background_frame(&self) -> Option<BackgroundFrame> {
-        let (from, to, fade) = self.fader.frame(self.now, |t| FADE_EASING.eval(t));
+        let (from, to, fade) = self.fader.frame(self.now, FADE_EASING);
         let rain = motion::rain_intensity(from, to, fade);
         let fire = motion::fire_intensity(from, to, fade, self.motion_gain);
         let sea = motion::sea_intensity(from, to, fade, self.motion_gain);
@@ -770,6 +766,13 @@ fn content_column(t: SceneTheme) -> impl widget::Widget {
         )
         .fill(Center::new(countdown_block(t)).fill_max(), 1)
         .child(Padding::all(t.spacing_xl(), Center::new(control_pill(t))))
+}
+
+/// 构建已在指定时刻触发的快捷键提示 (全新会话/首启路径：触发即标记已见)。
+fn triggered_cue(at: Duration) -> Cue {
+    let mut cue = Cue::new(CueTiming::default());
+    cue.trigger(at);
+    cue
 }
 
 /// 全屏 flash 叠加层：阶段流转时 accent 色脉冲衰减。

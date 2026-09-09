@@ -20,3 +20,7 @@
 
 - [rodio 0.22 repeat_infinite bug](memory/rodio-022-repeat-infinite-bug.md) — symphonia 解码器循环秒空无声,须自实现 LoopingDecoder (src/ambient.rs);2026-08-27 自 danqing/memory 迁入
 - [Poll 空转致环境音呲啦](memory/poll-control-flow-audio-crackling.md) — 隐藏态用 ControlFlow::Poll 致 tick 数千 fps,hammer rodio player → buffer underrun;统一 WaitUntil(16ms);2026-08-27 自 danqing/memory 迁入
+
+## 构建/工具链
+
+- [clippy --all-targets 炸 license.rs:65 (预存)](memory/clippy-all-targets-license-expect.md) — is_scene_available 仅测试引用致 expect(dead_code) 落空; 门禁用无 --all-targets 惯例命令, 根治待裁决勿顺手改
