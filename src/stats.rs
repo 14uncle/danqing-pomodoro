@@ -55,7 +55,7 @@ fn default_completed_true() -> bool {
 ///
 /// 持久化版本保护由 [`VersionedDoc`] 管理; `refuse_overwrite` 为运行时
 /// 降级保护标志 (加载到更高版本文件后置位, 禁止覆盖写入)。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FocusHistory {
     /// 会话记录。
     pub sessions: Vec<SessionRecord>,
@@ -192,15 +192,6 @@ fn round_label(round: u8) -> String {
         "—".into()
     } else {
         format!("{round}/{}", super::timer::CYCLE_LENGTH)
-    }
-}
-
-impl Default for FocusHistory {
-    fn default() -> Self {
-        Self {
-            sessions: Vec::new(),
-            refuse_overwrite: false,
-        }
     }
 }
 
