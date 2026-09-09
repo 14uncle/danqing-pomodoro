@@ -13,6 +13,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use chrono::{Datelike, Local, TimeZone};
+use danqing::persist::{self, VersionedDoc};
 use serde::{Deserialize, Serialize};
 
 use crate::scenes::SCENES;
@@ -50,23 +51,17 @@ fn default_completed_true() -> bool {
     true
 }
 
-/// 专注会话历史: 版本化容器 (追加式, 按完成时间序)。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// 专注会话历史: 运行时容器 (追加式, 按完成时间序)。
+///
+/// 持久化版本保护由 [`VersionedDoc`] 管理; `refuse_overwrite` 为运行时
+/// 降级保护标志 (加载到更高版本文件后置位, 禁止覆盖写入)。
+#[derive(Debug, Clone)]
 pub struct FocusHistory {
-    /// 历史文件格式版本; 未来大版本提高后旧程序拒读不覆盖。
-    #[serde(default = "default_format_version")]
-    pub format_version: u32,
     /// 会话记录。
-    #[serde(default)]
     pub sessions: Vec<SessionRecord>,
     /// 加载时发现未来版本文件后置位: 禁止任何覆盖写入 (防止降级把新版本数据
     /// 覆盖成空历史)。不参与序列化 (纯运行时保护)。
-    #[serde(skip, default)]
     pub refuse_overwrite: bool,
-}
-
-fn default_format_version() -> u32 {
-    FORMAT_VERSION
 }
 
 /// 某本地年的年度摘要 (深度洞察; 纯读聚合, 不触碰写路径)。
@@ -203,7 +198,6 @@ fn round_label(round: u8) -> String {
 impl Default for FocusHistory {
     fn default() -> Self {
         Self {
-            format_version: FORMAT_VERSION,
             sessions: Vec::new(),
             refuse_overwrite: false,
         }
@@ -211,17 +205,13 @@ impl Default for FocusHistory {
 }
 
 /// 历史文件路径: OS 配置目录 + danqing/focus-history.json。
-pub fn history_path() -> Option<PathBuf> {
-    dirs::config_dir().map(|p| p.join("danqing").join("focus-history.json"))
+pub fn history_path() -> PathBuf {
+    persist::config_dir("danqing").join("focus-history.json")
 }
 
 /// 保存 (原子写: 临时文件 + rename)。失败不 panic, 记录错误。
 pub fn save_history(history: &FocusHistory) -> io::Result<()> {
-    let Some(path) = history_path() else {
-        log::warn!("历史路径不可用, 跳过保存");
-        return Ok(());
-    };
-    save_history_to_path(&path, history)
+    save_history_to_path(&history_path(), history)
 }
 
 /// 导出历史为 CSV 到指定路径。失败返回用户可读的短原因 (静态文案,
@@ -243,10 +233,7 @@ pub fn export_csv_to(path: &Path, history: &FocusHistory) -> Result<(), &'static
 /// - 文件存在但不可解析 (损坏 / 未来版本改了字段类型) → 空历史 + 拒写保护,
 ///   防止后续保存把新版本数据覆盖成空历史 (见 [`load_history_guarded`])。
 pub fn load_history() -> FocusHistory {
-    let Some(path) = history_path() else {
-        return FocusHistory::new();
-    };
-    load_history_guarded(&path)
+    load_history_guarded(&history_path())
 }
 
 /// 带降级保护的历史加载 (可测): 文件存在但读不出/解析不出 → 拒写保护。
@@ -281,28 +268,54 @@ pub fn save_history_to_path(path: &Path, history: &FocusHistory) -> io::Result<(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let json = serde_json::to_string(history).map_err(io::Error::other)?;
-    let tmp = path.with_extension("json.tmp");
-    fs::write(&tmp, json)?;
-    fs::rename(tmp, path)?;
-    Ok(())
+    let doc = VersionedDoc::new(FORMAT_VERSION, history.sessions.clone());
+    doc.save(path)
 }
 
 /// 读取指定路径 (测试与显式路径场景)。
 /// 未来大版本文件: 返回空历史 + `refuse_overwrite = true` (拒读且拒写, 防降级覆盖)。
 pub fn load_history_from_path(path: &Path) -> Option<FocusHistory> {
     let data = fs::read_to_string(path).ok()?;
-    let mut history: FocusHistory = serde_json::from_str(&data).ok()?;
-    if history.format_version > FORMAT_VERSION {
-        log::warn!(
-            "历史文件版本 {} 高于本程序 {} (新版本软件写的数据), 拒读且后续拒写防降级覆盖",
-            history.format_version,
-            FORMAT_VERSION
-        );
-        history.sessions = Vec::new();
-        history.refuse_overwrite = true;
+
+    // 尝试新格式 (VersionedDoc 包装)
+    if let Some(doc) = VersionedDoc::<Vec<SessionRecord>>::load(path, FORMAT_VERSION) {
+        return Some(FocusHistory {
+            sessions: doc.into_data(),
+            refuse_overwrite: false,
+        });
     }
-    Some(history)
+
+    // 兼容旧格式 (format_version 在顶层)
+    #[derive(Deserialize)]
+    struct LegacyHistory {
+        #[serde(default)]
+        format_version: u32,
+        #[serde(default)]
+        sessions: Vec<SessionRecord>,
+    }
+
+    if let Ok(legacy) = serde_json::from_str::<LegacyHistory>(&data) {
+        if legacy.format_version > FORMAT_VERSION {
+            log::warn!(
+                "历史文件版本 {} 高于本程序 {} (新版本软件写的数据), 拒读且后续拒写防降级覆盖",
+                legacy.format_version,
+                FORMAT_VERSION
+            );
+            return None;
+        }
+        log::info!("迁移旧格式历史文件: {}", path.display());
+        return Some(FocusHistory {
+            sessions: legacy.sessions,
+            refuse_overwrite: false,
+        });
+    }
+
+    // 损坏或未来版本 (VersionedDoc 返回 None 且旧格式也解析失败)
+    log::warn!(
+        "历史文件存在但无法解析 (损坏或来自更高版本), 拒写保护以防覆盖: {}",
+        path.display()
+    );
+    None
 }
 
 /// epoch 秒 → 本地 (year, month)。出界/不可解析回退 (0, 0)。
@@ -363,7 +376,6 @@ mod tests {
         history.push(record(1_000_100));
         save_history_to_path(&path, &history).unwrap();
         let loaded = load_history_from_path(&path).expect("应能加载");
-        assert_eq!(loaded.format_version, FORMAT_VERSION);
         assert_eq!(loaded.sessions.len(), 2);
         assert_eq!(loaded.sessions[0], record(1_000_000));
 
@@ -379,7 +391,6 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         fs::write(&path, r#"{"sessions":[]}"#).unwrap();
         let loaded = load_history_from_path(&path).expect("缺 format_version 应能加载");
-        assert_eq!(loaded.format_version, FORMAT_VERSION);
         assert!(loaded.sessions.is_empty());
         let _ = fs::remove_dir_all(&dir);
     }
@@ -405,13 +416,13 @@ mod tests {
 
     #[test]
     fn load_history_future_version_refused() {
-        // format_version 高于当前: 拒读 (空历史) 且置 refuse_overwrite, 防降级覆盖。
+        // format_version 高于当前: 返回 None (拒读), load_history_guarded 会置 refuse_overwrite。
         let dir = std::env::temp_dir().join("danqing-test-history-future");
         let _ = fs::remove_dir_all(&dir);
         let path = dir.join("focus-history.json");
         fs::create_dir_all(&dir).unwrap();
         fs::write(&path, r#"{"format_version":99,"sessions":[]}"#).unwrap();
-        let loaded = load_history_from_path(&path).expect("未来版本应返回受保护的空历史");
+        let loaded = load_history_guarded(&path);
         assert!(loaded.sessions.is_empty(), "未来版本数据不应被加载");
         assert!(loaded.refuse_overwrite, "应置 refuse_overwrite 以拒写");
         let _ = fs::remove_dir_all(&dir);
@@ -427,7 +438,7 @@ mod tests {
         let future_data = r#"{"format_version":99,"sessions":[{"started_ts":1}]}"#;
         fs::write(&path, future_data).unwrap();
 
-        let mut history = load_history_from_path(&path).expect("未来版本应能识别");
+        let mut history = load_history_guarded(&path);
         assert!(history.refuse_overwrite);
         history.push(record(42)); // 运行中新会话入内存
         save_history_to_path(&path, &history).expect("拒写应返回 Ok (静默跳过)");
@@ -478,6 +489,8 @@ mod tests {
             r#"{"format_version":2,"sessions":[{"started_ts":"2026-08-01T10:00:00Z"}]}"#;
         fs::write(&path, future_data).unwrap();
 
+        // 旧格式 serde 解析失败 (类型不匹配) → VersionedDoc 也失败 → 返回 None
+        // load_history_guarded 会置 refuse_overwrite
         let mut history = load_history_guarded(&path);
         assert!(history.refuse_overwrite, "类型变更的未来文件应拒写保护");
         history.push(record(42));
