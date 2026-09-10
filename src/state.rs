@@ -7,7 +7,6 @@
 //! 启动时优先加载, 失败回退默认 25:00 Idle。Running 状态按 wall-clock
 //! 偏移恢复 deadline, 允许跨重启不丢时间。
 
-use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -171,10 +170,8 @@ pub fn load_state() -> Option<PomodoroState> {
 
 /// 写入指定路径 (测试与显式路径场景)。
 pub fn save_to_path(path: &Path, state: &PomodoroState) -> io::Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
     let json = serde_json::to_string(state).map_err(io::Error::other)?;
+    // 目录由框架 atomic_save 内部创建, 产品侧不重复建目录。
     persist::atomic_save(path, json.as_bytes())
 }
 
@@ -186,6 +183,7 @@ pub fn load_from_path(path: &Path) -> PomodoroState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn run_state_conversion_roundtrip() {

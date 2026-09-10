@@ -263,9 +263,7 @@ pub fn save_history_to_path(path: &Path, history: &FocusHistory) -> io::Result<(
         );
         return Ok(());
     }
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
+    // 目录由框架 atomic_save 内部创建, 产品侧不重复建目录。
     let doc = VersionedDoc::new(FORMAT_VERSION, history.sessions.clone());
     doc.save(path)
 }
