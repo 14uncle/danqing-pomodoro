@@ -146,18 +146,22 @@ pub fn current_wall_secs() -> u64 {
 }
 
 /// 持久化文件路径 (OS 配置目录 + danqing/pomodoro.json)。
-pub fn state_path() -> PathBuf {
-    persist::config_dir("danqing").join("pomodoro.json")
+pub fn state_path() -> Option<PathBuf> {
+    persist::config_dir("danqing").map(|p| p.join("pomodoro.json"))
 }
 
 /// 写盘: 原子写 (临时文件 + rename)。失败不 panic, 记录错误。
 pub fn save_state(state: &PomodoroState) -> io::Result<()> {
-    save_to_path(&state_path(), state)
+    let Some(path) = state_path() else {
+        log::warn!("持久化路径不可用, 跳过保存");
+        return Ok(());
+    };
+    save_to_path(&path, state)
 }
 
 /// 加载: 文件不存在返回 None，存在时用 load_or_default（损坏时返回默认值）。
 pub fn load_state() -> Option<PomodoroState> {
-    let path = state_path();
+    let path = state_path()?;
     if path.exists() {
         Some(load_from_path(&path))
     } else {
@@ -339,7 +343,7 @@ mod tests {
 
     #[test]
     fn state_path_returns_pomodoro_json() {
-        let path = state_path();
+        let path = state_path().unwrap();
         assert_eq!(
             path.file_name().and_then(|s| s.to_str()),
             Some("pomodoro.json")

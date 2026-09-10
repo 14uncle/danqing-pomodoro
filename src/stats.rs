@@ -196,13 +196,17 @@ fn round_label(round: u8) -> String {
 }
 
 /// 历史文件路径: OS 配置目录 + danqing/focus-history.json。
-pub fn history_path() -> PathBuf {
-    persist::config_dir("danqing").join("focus-history.json")
+pub fn history_path() -> Option<PathBuf> {
+    persist::config_dir("danqing").map(|p| p.join("focus-history.json"))
 }
 
 /// 保存 (原子写: 临时文件 + rename)。失败不 panic, 记录错误。
 pub fn save_history(history: &FocusHistory) -> io::Result<()> {
-    save_history_to_path(&history_path(), history)
+    let Some(path) = history_path() else {
+        log::warn!("历史路径不可用, 跳过保存");
+        return Ok(());
+    };
+    save_history_to_path(&path, history)
 }
 
 /// 导出历史为 CSV 到指定路径。失败返回用户可读的短原因 (静态文案,
@@ -224,7 +228,10 @@ pub fn export_csv_to(path: &Path, history: &FocusHistory) -> Result<(), &'static
 /// - 文件存在但不可解析 (损坏 / 未来版本改了字段类型) → 空历史 + 拒写保护,
 ///   防止后续保存把新版本数据覆盖成空历史 (见 [`load_history_guarded`])。
 pub fn load_history() -> FocusHistory {
-    load_history_guarded(&history_path())
+    let Some(path) = history_path() else {
+        return FocusHistory::new();
+    };
+    load_history_guarded(&path)
 }
 
 /// 带降级保护的历史加载 (可测): 文件存在但读不出/解析不出 → 拒写保护。
@@ -274,6 +281,19 @@ pub fn load_history_from_path(path: &Path) -> Option<FocusHistory> {
             sessions: doc.into_data(),
             refuse_overwrite: false,
         });
+    }
+
+    // 新格式 (VersionedDoc 包装) 顶层有 "version" 键。若上面 VersionedDoc::load
+    // 已失败 (未来版本拒读 / 数据损坏), 不能再落进旧格式兜底 —— 否则 "version"
+    // 键被 serde 忽略、format_version 缺省 0, 未来版本数据会被误判为空历史放行覆盖。
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&data) {
+        if v.get("version").is_some() {
+            log::warn!(
+                "历史文件为更高版本的新格式 (VersionedDoc), 拒读以防降级覆盖: {}",
+                path.display()
+            );
+            return None;
+        }
     }
 
     // 兼容旧格式 (format_version 在顶层)
@@ -491,6 +511,30 @@ mod tests {
             future_data,
             "未来版本文件必须保持原样"
         );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn new_format_future_version_is_protected() {
+        // 新格式 (VersionedDoc 包装) 未来版本文件: 必须拒读且拒写, 防降级覆盖。
+        let dir = std::env::temp_dir().join("danqing-test-history-newfmt-future");
+        let _ = fs::remove_dir_all(&dir);
+        let path = dir.join("focus-history.json");
+        fs::create_dir_all(&dir).unwrap();
+        let future_data = r#"{"version":2,"data":[{"started_ts":1,"completed_ts":1501,"planned_secs":1500,"focused_secs":1500,"scene_index":0,"round_in_cycle":1,"completed":true}]}"#;
+        fs::write(&path, future_data).unwrap();
+
+        let mut history = load_history_guarded(&path);
+        assert!(history.sessions.is_empty(), "未来版本数据不应被加载");
+        assert!(
+            history.refuse_overwrite,
+            "新格式未来版本文件必须置 refuse_overwrite"
+        );
+
+        history.push(record(42));
+        save_history_to_path(&path, &history).expect("拒写应返回 Ok");
+        let on_disk = fs::read_to_string(&path).unwrap();
+        assert_eq!(on_disk, future_data, "未来版本文件必须保持原样, 不得被覆盖");
         let _ = fs::remove_dir_all(&dir);
     }
 
