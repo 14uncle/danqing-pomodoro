@@ -514,7 +514,7 @@ impl App for PomodoroApp {
                 if exported {
                     // 导出成功：在系统文件管理器中显示文件 (回答「导到哪了」)。
                     if let Some(path) = path {
-                        reveal_in_file_manager(&path);
+                        danqing::fs::reveal_in_file_manager(&path);
                     }
                 }
             }
@@ -522,7 +522,7 @@ impl App for PomodoroApp {
                 // 已导出过的按钮：直接打开导出文件所在目录 (文件若被外部删除则只记日志)。
                 if let Some(path) = export_csv_path() {
                     if path.exists() {
-                        reveal_in_file_manager(&path);
+                        danqing::fs::reveal_in_file_manager(&path);
                     } else {
                         log::warn!("导出文件不存在，跳过打开目录：{}", path.display());
                     }
@@ -1378,41 +1378,6 @@ fn format_duration(secs: u64) -> String {
 /// 导出 CSV 的固定路径 (OS 配置目录 + danqing/focus-history.csv)。
 fn export_csv_path() -> Option<std::path::PathBuf> {
     dirs::config_dir().map(|d| d.join("danqing").join("focus-history.csv"))
-}
-
-/// 在系统文件管理器中显示导出文件 (回答「导到哪了」)。
-/// Win: Explorer 定位文件; mac: Finder 定位; 其它平台：打开所在目录。
-/// 导出本身已成功，此处失败只记日志，不影响导出结果。
-fn reveal_in_file_manager(path: &std::path::Path) {
-    if let Err(err) = reveal_attempt(path) {
-        log::warn!("在文件管理器中显示导出文件失败：{err}");
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn reveal_attempt(path: &std::path::Path) -> std::io::Result<std::process::Child> {
-    std::process::Command::new("explorer")
-        .arg(format!("/select,{}", path.display()))
-        .spawn()
-}
-
-#[cfg(target_os = "macos")]
-fn reveal_attempt(path: &std::path::Path) -> std::io::Result<std::process::Child> {
-    std::process::Command::new("open")
-        .arg("-R")
-        .arg(path)
-        .spawn()
-}
-
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
-fn reveal_attempt(path: &std::path::Path) -> std::io::Result<std::process::Child> {
-    let Some(dir) = path.parent() else {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "导出文件无父目录",
-        ));
-    };
-    std::process::Command::new("xdg-open").arg(dir).spawn()
 }
 
 /// 打开 GitHub Issues 反馈页面：预填标题前缀 + 应用版本 + 操作系统信息。
