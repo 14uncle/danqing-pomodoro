@@ -158,8 +158,8 @@ impl FocusHistory {
                 "{},{},{},{},{},{}\n",
                 format_ts(s.started_ts),
                 format_ts(s.completed_ts),
-                format_dur(s.planned_secs),
-                format_dur(s.focused_secs),
+                super::timer::format_mmss(s.planned_secs),
+                super::timer::format_mmss(s.focused_secs),
                 scene_name(s.scene_index),
                 round_label(s.round_in_cycle),
             ));
@@ -174,11 +174,6 @@ fn format_ts(ts: u64) -> String {
         Some(t) => t.format("%Y-%m-%d %H:%M:%S").to_string(),
         None => "无效时间".into(),
     }
-}
-
-/// 秒数 → "MM:SS" (分钟:秒, 与倒计时同刻度)。
-fn format_dur(secs: u64) -> String {
-    format!("{:02}:{:02}", secs / 60, secs % 60)
 }
 
 /// 场景索引 → 名字 (越界兜底 "未知")。

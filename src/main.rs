@@ -1377,7 +1377,7 @@ fn format_duration(secs: u64) -> String {
 
 /// 导出 CSV 的固定路径 (OS 配置目录 + danqing/focus-history.csv)。
 fn export_csv_path() -> Option<std::path::PathBuf> {
-    dirs::config_dir().map(|d| d.join("danqing").join("focus-history.csv"))
+    danqing::persist::config_dir("danqing").map(|d| d.join("focus-history.csv"))
 }
 
 /// 打开 GitHub Issues 反馈页面：预填标题前缀 + 应用版本 + 操作系统信息。

@@ -27,6 +27,11 @@ pub const DEFAULT_BREAK_SECS: u64 = 5 * 60;
 /// 默认长休息时长（秒）。
 pub const DEFAULT_LONG_BREAK_SECS: u64 = 15 * 60;
 
+/// 秒数 → "MM:SS" 格式 (分钟:秒)。
+pub fn format_mmss(secs: u64) -> String {
+    format!("{:02}:{:02}", secs / 60, secs % 60)
+}
+
 /// 可定制的计时时长配置。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TimerConfig {
@@ -304,8 +309,7 @@ impl Pomodoro {
 
     /// `mm:ss` 显示 (剩余秒数向下取整)。
     pub fn display(&self, now: Duration) -> String {
-        let secs = self.remaining(now).as_secs();
-        format!("{:02}:{:02}", secs / 60, secs % 60)
+        format_mmss(self.remaining(now).as_secs())
     }
 
     /// Running 状态下由 deadline 推算剩余 (饱和减法)。
