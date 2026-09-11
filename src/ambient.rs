@@ -276,8 +276,11 @@ impl LoopingDecoder {
     }
 
     /// 打开文件并创建解码器; 任一步失败返回 None。
+    ///
+    /// 路径经 `danqing::asset::resolve` 解析 (exe 目录优先) — MSIX 下 CWD 是
+    /// System32, 裸相对路径会读空。
     fn decode(path: &str) -> Option<rodio::Decoder<BufReader<File>>> {
-        let file = File::open(path).ok()?;
+        let file = File::open(danqing::asset::resolve(path)).ok()?;
         rodio::Decoder::new(BufReader::new(file)).ok()
     }
 }

@@ -7,11 +7,11 @@
 //! 启动时优先加载, 失败回退默认 25:00 Idle。Running 状态按 wall-clock
 //! 偏移恢复 deadline, 允许跨重启不丢时间。
 
-use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use danqing::persist;
 use serde::{Deserialize, Serialize};
 
 use super::timer::{DEFAULT_BREAK_SECS, DEFAULT_FOCUS_SECS, DEFAULT_LONG_BREAK_SECS, Phase, Run};
@@ -43,6 +43,27 @@ impl From<RunState> for Run {
             RunState::Idle => Self::Idle,
             RunState::Running => Self::Running,
             RunState::Paused => Self::Paused,
+        }
+    }
+}
+
+impl Default for PomodoroState {
+    fn default() -> Self {
+        Self {
+            phase: Phase::Focus,
+            run: RunState::Idle,
+            remaining_secs: DEFAULT_FOCUS_SECS,
+            current_scene: 0,
+            saved_elapsed_secs: 0,
+            saved_wall_secs: 0,
+            has_seen_shortcut_hint: false,
+            completed_focus: 0,
+            today_date: String::new(),
+            today_count: 0,
+            focus_duration_secs: DEFAULT_FOCUS_SECS,
+            break_duration_secs: DEFAULT_BREAK_SECS,
+            long_break_duration_secs: DEFAULT_LONG_BREAK_SECS,
+            sound_on: true,
         }
     }
 }
@@ -125,7 +146,7 @@ pub fn current_wall_secs() -> u64 {
 
 /// 持久化文件路径 (OS 配置目录 + danqing/pomodoro.json)。
 pub fn state_path() -> Option<PathBuf> {
-    dirs::config_dir().map(|p| p.join("danqing").join("pomodoro.json"))
+    persist::config_dir("danqing").map(|p| p.join("pomodoro.json"))
 }
 
 /// 写盘: 原子写 (临时文件 + rename)。失败不 panic, 记录错误。
@@ -137,39 +158,32 @@ pub fn save_state(state: &PomodoroState) -> io::Result<()> {
     save_to_path(&path, state)
 }
 
-/// 加载: 文件不存在 / 解析失败返回 None。
+/// 加载: 文件不存在返回 None，存在时用 load_or_default（损坏时返回默认值）。
 pub fn load_state() -> Option<PomodoroState> {
     let path = state_path()?;
-    load_from_path(&path)
+    if path.exists() {
+        Some(load_from_path(&path))
+    } else {
+        None
+    }
 }
 
 /// 写入指定路径 (测试与显式路径场景)。
 pub fn save_to_path(path: &Path, state: &PomodoroState) -> io::Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
     let json = serde_json::to_string(state).map_err(io::Error::other)?;
-    let tmp = path.with_extension("json.tmp");
-    fs::write(&tmp, json)?;
-    fs::rename(tmp, path)?;
-    Ok(())
+    // 目录由框架 atomic_save 内部创建, 产品侧不重复建目录。
+    persist::atomic_save(path, json.as_bytes())
 }
 
-/// 读取指定路径 (测试与显式路径场景)。
-pub fn load_from_path(path: &Path) -> Option<PomodoroState> {
-    let data = fs::read_to_string(path).ok()?;
-    match serde_json::from_str(&data) {
-        Ok(state) => Some(state),
-        Err(err) => {
-            log::warn!("解析持久化文件失败: {err}");
-            None
-        }
-    }
+/// 读取指定路径 (测试与显式路径场景)。文件缺失或损坏返回默认值。
+pub fn load_from_path(path: &Path) -> PomodoroState {
+    persist::load_or_default(path)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn run_state_conversion_roundtrip() {
@@ -226,7 +240,7 @@ mod tests {
             sound_on: true,
         };
         save_to_path(&path, &original).unwrap();
-        let loaded = load_from_path(&path).unwrap();
+        let loaded = load_from_path(&path);
         assert_eq!(original, loaded);
 
         let _ = fs::remove_dir_all(&dir);
@@ -248,7 +262,7 @@ mod tests {
             "saved_wall_secs": 0
         }"#;
         fs::write(&path, old_json).unwrap();
-        let loaded = load_from_path(&path).expect("旧版 JSON 应能加载");
+        let loaded = load_from_path(&path);
         assert!(
             !loaded.has_seen_shortcut_hint,
             "缺字段时应默认为 false (触发提示)"
@@ -273,7 +287,7 @@ mod tests {
             "has_seen_shortcut_hint": true
         }"#;
         fs::write(&path, old_json).unwrap();
-        let loaded = load_from_path(&path).expect("旧版 JSON 应能加载");
+        let loaded = load_from_path(&path);
         assert_eq!(loaded.completed_focus, 0, "缺字段时应默认为 0");
         let _ = fs::remove_dir_all(&dir);
     }
@@ -297,27 +311,31 @@ mod tests {
             "completed_focus": 1
         }"#;
         fs::write(&path, old_json).unwrap();
-        let loaded = load_from_path(&path).expect("旧版 JSON 应能加载");
+        let loaded = load_from_path(&path);
         assert!(loaded.today_date.is_empty(), "缺字段时应默认为空串");
         assert_eq!(loaded.today_count, 0, "缺字段时应默认为 0");
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn load_from_nonexistent_path_returns_none() {
+    fn load_from_nonexistent_path_returns_default() {
         let path = std::env::temp_dir().join("danqing-test-nonexistent.json");
         let _ = fs::remove_file(&path);
-        assert!(load_from_path(&path).is_none());
+        let loaded = load_from_path(&path);
+        assert_eq!(loaded.phase, Phase::Focus);
+        assert_eq!(loaded.remaining_secs, DEFAULT_FOCUS_SECS);
     }
 
     #[test]
-    fn load_from_corrupted_json_returns_none() {
+    fn load_from_corrupted_json_returns_default() {
         let dir = std::env::temp_dir().join("danqing-test-corrupt");
         let _ = fs::remove_dir_all(&dir);
         let path = dir.join("pomodoro.json");
         fs::create_dir_all(&dir).unwrap();
         fs::write(&path, "{not json").unwrap();
-        assert!(load_from_path(&path).is_none());
+        let loaded = load_from_path(&path);
+        assert_eq!(loaded.phase, Phase::Focus);
+        assert_eq!(loaded.remaining_secs, DEFAULT_FOCUS_SECS);
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -350,7 +368,7 @@ mod tests {
             "today_count": 3
         }"#;
         fs::write(&path, old_json).unwrap();
-        let loaded = load_from_path(&path).expect("旧版 JSON 应能加载");
+        let loaded = load_from_path(&path);
         assert_eq!(
             loaded.focus_duration_secs, 1500,
             "缺 focus_duration_secs 时应默认为 1500"
@@ -389,7 +407,7 @@ mod tests {
             "long_break_duration_secs": 900
         }"#;
         fs::write(&path, old_json).unwrap();
-        let loaded = load_from_path(&path).expect("旧版 JSON 应能加载");
+        let loaded = load_from_path(&path);
         assert!(loaded.sound_on, "缺 sound_on 字段时应默认 true");
         let _ = fs::remove_dir_all(&dir);
     }

@@ -11,3 +11,7 @@
 #    部分导入 IAT 未填充、进程首次调用该导入即崩溃。
 #
 # 当前不需要额外 rustflags;诊断工具见 tools/ 与 README.md「开发环境」。
+
+# [build] target-dir 已于 2026-09-10 去掉共享: RustRover 多仓并发编译触发 race condition。
+# 各仓恢复独立 target/，多占 ~40GB 但彻底消除编译冲突。
+

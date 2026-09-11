@@ -1,8 +1,9 @@
 # package_portable.ps1 - portable Windows zip for danqing release binaries.
 #
-# Stages target/release/[examples/]<binary>.exe (+ any *.dll), assets/,
-# README and any LICENSE* files into a staging dir, then zips into
-# target/package/<binary>-v<version>-win-x64.zip with SHA256.
+# Stages .cargo-target/release/[examples/]<binary>.exe (shared farm target,
+# see .cargo/config.toml) (+ any *.dll), assets/, README and any LICENSE*
+# files into a staging dir, then zips into
+# ../release-archives/pomodoro/<binary>-v<version>-win-x64.zip with SHA256.
 #
 # Usage (from repo root):
 #   powershell -NoProfile -File tools/package_portable.ps1
@@ -15,7 +16,7 @@
 param(
     [string]$BinaryName = "showcase",
     [string]$Version = "",
-    [string]$OutDir = "target\package",
+    [string]$OutDir = "..\release-archives\pomodoro",
     [string]$IcoPath = "assets\logo\logo.ico"
 )
 
@@ -43,7 +44,7 @@ if (-not $PSBoundParameters.ContainsKey('Version')) {
     }
 }
 
-$ReleaseDir = Join-Path $RepoRoot "target\release"
+$ReleaseDir = Join-Path $RepoRoot "..\.cargo-target\release"  # shared farm target (see .cargo/config.toml)
 $Stage = Join-Path $OutDir "stage"
 $ArchiveBase = "${BinaryName}-v${Version}-win-x64"
 $ZipPath = Join-Path $OutDir "${ArchiveBase}.zip"
@@ -116,7 +117,7 @@ if ($Dlls.Count -gt 0) {
     foreach ($d in $Dlls) { Copy-Item $d.FullName $Stage }
     Write-Host ("Copied {0} runtime DLL(s)" -f $Dlls.Count)
 } else {
-    Write-Host "No runtime DLLs in target/release (statically linked or system-provided)."
+    Write-Host "No runtime DLLs in shared release dir (statically linked or system-provided)."
 }
 
 # assets/.

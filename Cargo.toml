@@ -1,25 +1,53 @@
 [package]
 name = "danqing-pomodoro"
-version = "0.1.0"
+version = "0.2.8"
 edition = "2024"
 rust-version = "1.85"
 description = "丹青番茄钟 —— 专注陪伴的沉浸世界"
 license = "MIT OR Apache-2.0"
 
+[features]
+# 默认 = 免费版 (2 场景, 无统计/报告)
+default = []
+# 完整版 (9 场景, 全功能) —— 本地/GitHub 闭源构建时启用
+full = []
+# 微软商店版: 启动时检查内购许可证, 已购则解锁完整版
+store = ["dep:windows", "dep:windows-collections"]
+
 [dependencies]
 # 提交状态固定为 git 依赖 (danqing 已公开): 仓库自洽 + Cargo.lock 钉住 rev 保证发布可复现。
 # 本地联动开发框架时的临时切换见 DEVELOPMENT.md「依赖机制」。
-danqing = { git = "https://github.com/14uncle/danqing" }
+# update feature: 应用内更新检查核心 + GitHub 轨运输 (商店轨留产品侧, 见 docs/specs/update-check.md)。
+danqing = { git = "https://github.com/14uncle/danqing", features = ["update", "persist"] }
 chrono = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-dirs = "5"
 rodio = { version = "0.22", default-features = false, features = ["playback", "symphonia-ogg", "symphonia-vorbis"] }
 log = "0.4"
 anyhow = "1"
 open = "5"
 urlencoding = "2"
+# 应用内更新检查的网络栈随 danqing update feature 进入 (产品不再直接依赖 ureq)。
 windows-sys = { version = "0.59", features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_System_Diagnostics_Debug"] }
+# 微软商店 IAP (仅 store feature 启用时引入)
+# Win32_UI_Shell/WinRT: 购买对话框属主绑定 (IInitializeWithWindow) + COM 单元初始化;
+# Win32_UI_WindowsAndMessaging: EnumWindows 定位本进程主窗口
+[dependencies.windows]
+version = "0.61"
+features = [
+    "Services_Store",
+    "ApplicationModel",
+    "Win32_Foundation",
+    "Win32_System_WinRT",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+]
+optional = true
+# 购买流程按 InAppOfferToken 在商店目录定位 add-on 时需命名 IIterable 类型
+# (本是 windows 的传递依赖, 提升为直接依赖, 同样仅 store feature 启用)
+[dependencies.windows-collections]
+version = "0.2"
+optional = true
 
 [build-dependencies]
 winresource = "0.1"

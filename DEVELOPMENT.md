@@ -126,7 +126,7 @@ powershell -NoProfile -File tools/package_portable.ps1 `
   -IcoPath "assets\logo\pomodoro.ico"
 ```
 
-输出：`target/package/danqing-pomodoro-v0.1.0-win-x64.zip`
+输出：`../release-archives/pomodoro/danqing-pomodoro-v0.1.0-win-x64.zip`（农场共享归档；编译产物在农场根 `.cargo-target/`，见根 CLAUDE.md）
 
 ## 运行时资产
 
@@ -156,6 +156,13 @@ danqing-pomodoro/
 - 默认 git 依赖：检查网络能否访问 GitHub,或 `cargo update -p danqing` 重新拉取
 - 临时 path 切换时：确认 danqing 仓库在同级目录 (`../danqing`)
 - 配置了用户级 `paths` override 时报依赖图不一致：本地 danqing 有未提交/未推送的依赖变更，先提交 push 再 `cargo update -p danqing`
+
+### Q: 改完 danqing 依赖 (feature/rev) 后 wgpu-hal 编译炸 (windows Param 类型不匹配)
+
+`cargo update -p danqing` 的部分重解可能把 cpal/gpu-allocator 的 windows 边
+从 0.62.2 错配回 0.61.3 (与 wgpu-hal 的 windows-core 0.62.2 漂移)。
+正确姿势: 改完 manifest 直接 `cargo check`/`cargo build`, 让 cargo 驱动最小重解
+(2026-09-08 update 下沉时实测, lock diff 从一串降级变成 danqing +5 行/-1 行)。
 
 ### Q: 图标没有嵌入 exe
 

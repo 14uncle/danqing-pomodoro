@@ -14,9 +14,7 @@
 
 mod ambient;
 mod audio;
-mod fader;
-mod flash;
-mod hint;
+mod license;
 mod motion;
 mod scenes;
 mod state;
@@ -24,6 +22,7 @@ mod stats;
 mod timer;
 mod today;
 mod tray;
+mod update;
 
 use chrono::Datelike;
 
@@ -31,17 +30,15 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use danqing::widget::{
-    self, Box as UiBox, Button, Center, CloseButton, Column, LogoKind, Node, Padding, Row, Stack,
-    Switcher, Text, TitleBar,
+    self, Box as UiBox, Button, Center, CloseButton, Column, LogoKind, MultiPanel, Node, Overlay,
+    Padding, Row, Stack, Text, TitleBar,
 };
 use danqing::{
-    AnimationCtx, App, BackgroundConfig, BackgroundFrame, Color, Easing, Edges, Event, Key,
-    LightTheme, NamedKey, ScaleMode, ScenePalette, SceneTheme, Size, Theme, WindowAction,
-    WindowConfig, WindowEventSender, hotkey_ids, shortcut_for_id, tray_action_ids,
+    AnimationCtx, App, BackgroundConfig, BackgroundFrame, Color, Crossfade, Cue, CueTiming, Easing,
+    Edges, Event, Key, LightTheme, NamedKey, Pulse, ScaleMode, ScenePalette, SceneTheme, Size,
+    Theme, Tween, WindowAction, WindowConfig, WindowEventSender, hotkey_ids, shortcut_for_id,
+    tray_action_ids,
 };
-use fader::SceneFader;
-use flash::FlashOverlay;
-use hint::ShortcutHintOverlay;
 use scenes::SCENES;
 use state::{PomodoroState, RunState, current_wall_secs, load_state, save_state};
 use stats::{FocusHistory, SessionRecord};
@@ -68,6 +65,8 @@ const SETTINGS_HEADER_GAP: f32 = 150.0;
 const STEPPER_VALUE_WIDTH: f32 = 72.0;
 /// 减号按钮相对标签的偏移量：把 [-] 从标签右侧推开 15px (视觉微调)。
 const STEPPER_MINUS_OFFSET: f32 = 15.0;
+/// 设置按钮更新角标直径 (逻辑像素; 圆点 = 半径取直径之半)。
+const SETTINGS_BADGE_DIAMETER: f32 = 8.0;
 
 /// 番茄钟应用状态。
 struct PomodoroApp {
@@ -76,7 +75,7 @@ struct PomodoroApp {
     /// 注入时间轴：自应用启动的累计时间 (由 tick 心跳推进)。
     now: Duration,
     /// 场景交叉淡化器 (含当前场景索引)。
-    fader: SceneFader,
+    fader: Crossfade,
     /// 启动时 elapsed 偏移 (持久化恢复); 0 表示全新会话。
     now_offset: Duration,
     /// 状态脏旗标：update 触发，tick 节流落盘后清零。
@@ -86,9 +85,9 @@ struct PomodoroApp {
     /// 最近一次跨日检查的 now 值 (1Hz 节流基准)。
     last_date_check: Duration,
     /// 完成反馈视觉脉冲 (阶段流转触发)。
-    flash: FlashOverlay,
+    flash: Pulse,
     /// 首次启动快捷键提示 (一过性 fade-in/hold/fade-out 状态机)。
-    hint: ShortcutHintOverlay,
+    hint: Cue,
     /// 当前持久化的「已见过快捷键提示」旗标 (snapshot_state 直接读)。
     has_seen_shortcut_hint: bool,
     /// 今日计数所属日期 (YYYY-MM-DD, 与 today_count 配对)。
@@ -101,8 +100,8 @@ struct PomodoroApp {
     ambient_player: ambient::AmbientPlayer,
     /// 全局环境音开关 (false = 静音所有场景音景)。
     sound_on: bool,
-    /// 场景动效沉降包络 (纯逻辑：暂停 500ms 淡出 / 恢复淡入)。
-    motion_envelope: motion::MotionEnvelope,
+    /// 场景动效沉降补间 (纯逻辑：暂停 500ms 淡出 / 恢复淡入)。
+    motion_envelope: Tween,
     /// 最近 tick 算出的动效包络值 (`background_frame` 只读)。
     motion_gain: f32,
     /// 雨钟 (秒): 雨丝下落时间轴。暂停时定格可见 (不随包络沉降),
@@ -175,6 +174,10 @@ enum Msg {
     OpenExportDir,
     /// 打开 GitHub Issues 反馈页面 (预填标题前缀 + 版本 + OS)。
     OpenFeedback,
+    /// 购买 / 解锁完整版 (设置面板「版本」行; 行为按构建变体分派, 见 license 模块)。
+    Upgrade,
+    /// 更新动作 (设置面板「版本」行, 有新版时出现; 行为按轨道分派, 见 update 模块)。
+    UpdateAction,
 }
 
 impl PomodoroApp {
@@ -183,21 +186,21 @@ impl PomodoroApp {
         Self {
             timer: Pomodoro::new(),
             now: Duration::ZERO,
-            fader: SceneFader::new(0, FADE_DURATION),
+            fader: Crossfade::new(0, FADE_DURATION),
             now_offset: Duration::ZERO,
             state_dirty: true,
             last_save_at: Duration::ZERO,
             last_date_check: Duration::ZERO,
-            flash: FlashOverlay::new(FLASH_DURATION),
+            flash: Pulse::new(FLASH_DURATION),
             // 全新会话：触发一次性快捷键提示，同时标记为已见 (节流落盘后 JSON 持久化)。
-            hint: ShortcutHintOverlay::triggered_at(Duration::ZERO),
+            hint: triggered_cue(Duration::ZERO),
             has_seen_shortcut_hint: true,
             today_date: today::today_string(),
             today_count: 0,
             ambient_mixer: ambient::AmbientMixer::new(),
             ambient_player: ambient::AmbientPlayer::new(),
             sound_on: true,
-            motion_envelope: motion::MotionEnvelope::new(),
+            motion_envelope: Tween::new(motion::SETTLE_DURATION, Easing::Linear),
             motion_gain: 0.0,
             rain_clock: 0.0,
             window_sender: None,
@@ -238,10 +241,15 @@ impl PomodoroApp {
             state.completed_focus,
             saved_config,
         );
-        let fader = if state.current_scene < SCENES.len() {
-            SceneFader::new(state.current_scene, FADE_DURATION)
+        let max_scene = if license::is_full() {
+            SCENES.len()
         } else {
-            SceneFader::new(0, FADE_DURATION)
+            license::FREE_SCENE_COUNT
+        };
+        let fader = if state.current_scene < max_scene {
+            Crossfade::new(state.current_scene, FADE_DURATION)
+        } else {
+            Crossfade::new(0, FADE_DURATION)
         };
         // 一次性快捷键提示：没看过就触发一次，触发即标记为已见。
         let should_show_hint = !state.has_seen_shortcut_hint;
@@ -256,11 +264,11 @@ impl PomodoroApp {
             state_dirty: true,
             last_save_at: now_offset,
             last_date_check: now_offset,
-            flash: FlashOverlay::new(FLASH_DURATION),
+            flash: Pulse::new(FLASH_DURATION),
             hint: if should_show_hint {
-                ShortcutHintOverlay::triggered_at(now_offset)
+                triggered_cue(now_offset)
             } else {
-                ShortcutHintOverlay::idle()
+                Cue::new(CueTiming::default())
             },
             has_seen_shortcut_hint: true,
             today_date: today,
@@ -268,7 +276,7 @@ impl PomodoroApp {
             ambient_mixer: ambient::AmbientMixer::new(),
             ambient_player: ambient::AmbientPlayer::new(),
             sound_on: state.sound_on,
-            motion_envelope: motion::MotionEnvelope::new(),
+            motion_envelope: Tween::new(motion::SETTLE_DURATION, Easing::Linear),
             motion_gain: 0.0,
             rain_clock: 0.0,
             window_sender: None,
@@ -327,7 +335,7 @@ impl PomodoroApp {
     /// 当前视觉调色板：淡化中为两端调色板的插值 (色调随画面同步流动);
     /// 暂停时整体降饱和 70% (含控件底色与文字色), 视觉上明显区分。
     fn palette(&self) -> ScenePalette {
-        let (from, to, t) = self.fader.frame(self.now, |t| FADE_EASING.eval(t));
+        let (from, to, t) = self.fader.frame(self.now, FADE_EASING);
         let base = SCENES[from].palette.lerp(SCENES[to].palette, t);
         if self.timer.is_running() {
             base
@@ -422,11 +430,21 @@ impl App for PomodoroApp {
                 self.timer.skip(self.now);
             }
             Msg::PrevScene => {
-                let target = (self.fader.current() + SCENES.len() - 1) % SCENES.len();
+                let count = if license::is_full() {
+                    SCENES.len()
+                } else {
+                    license::FREE_SCENE_COUNT
+                };
+                let target = (self.fader.current() + count - 1) % count;
                 self.fader.switch_to(target, self.now);
             }
             Msg::NextScene => {
-                let target = (self.fader.current() + 1) % SCENES.len();
+                let count = if license::is_full() {
+                    SCENES.len()
+                } else {
+                    license::FREE_SCENE_COUNT
+                };
+                let target = (self.fader.current() + 1) % count;
                 self.fader.switch_to(target, self.now);
             }
             Msg::ToggleVisible => {
@@ -458,6 +476,12 @@ impl App for PomodoroApp {
                 self.timer.update_config(timer::TimerConfig::default());
             }
             Msg::ToggleStats => {
+                if !license::stats_available() {
+                    // 免费版: 引导解锁 —— 商店版拉起 IAP 购买对话框, 便携版打开商店页
+                    // (与版本行「解锁完整版」统一走 purchase_full_version 的分派)。
+                    license::purchase_full_version();
+                    return;
+                }
                 // 关闭统计面板：焦点回到「统计」按钮 (一次性，见 focus_request)。
                 if self.stats_open {
                     self.restore_focus_to = Some("stats-button");
@@ -467,6 +491,12 @@ impl App for PomodoroApp {
                 self.stats_open = !self.stats_open;
             }
             Msg::ToggleReport => {
+                if !license::report_available() {
+                    // 免费版: 引导解锁 —— 商店版拉起 IAP 购买对话框, 便携版打开商店页
+                    // (与版本行「解锁完整版」统一走 purchase_full_version 的分派)。
+                    license::purchase_full_version();
+                    return;
+                }
                 // 关闭报告面板：焦点回到「报告」按钮 (一次性，见 focus_request)。
                 if self.report_open {
                     self.restore_focus_to = Some("report-button");
@@ -484,7 +514,7 @@ impl App for PomodoroApp {
                 if exported {
                     // 导出成功：在系统文件管理器中显示文件 (回答「导到哪了」)。
                     if let Some(path) = path {
-                        reveal_in_file_manager(&path);
+                        danqing::fs::reveal_in_file_manager(&path);
                     }
                 }
             }
@@ -492,13 +522,15 @@ impl App for PomodoroApp {
                 // 已导出过的按钮：直接打开导出文件所在目录 (文件若被外部删除则只记日志)。
                 if let Some(path) = export_csv_path() {
                     if path.exists() {
-                        reveal_in_file_manager(&path);
+                        danqing::fs::reveal_in_file_manager(&path);
                     } else {
                         log::warn!("导出文件不存在，跳过打开目录：{}", path.display());
                     }
                 }
             }
             Msg::OpenFeedback => open_feedback(),
+            Msg::Upgrade => license::purchase_full_version(),
+            Msg::UpdateAction => update::perform_action(),
         }
     }
 
@@ -507,17 +539,14 @@ impl App for PomodoroApp {
         widget::node(
             Stack::new()
                 .child(
-                    Switcher::new()
+                    MultiPanel::new()
                         .child(content_column(t))
-                        .child(
-                            // 额外包裹一层 Padding 避免焦点路径
-                            // 在主面板和设置面板间碰撞：
-                            // 同索引路径会命中不同组件导致
-                            // FocusOut 无法送达隐藏面板内的旧焦点。
-                            Padding::new(Edges::ZERO, settings_panel(t)),
-                        )
-                        .child(Padding::new(Edges::ZERO, stats_panel(t)))
-                        .child(Padding::new(Edges::ZERO, report_panel(t)))
+                        // 面板即 Overlay: 关态 children 为空 + 关层边沿 reset_focus,
+                        // 焦点路径碰撞/FocusOut 不可达的旧隐患由组件门控内化,
+                        // 不再需要 Padding 垫层规避。
+                        .child(settings_panel(t))
+                        .child(stats_panel(t))
+                        .child(report_panel(t))
                         .bind(|s: &PomodoroApp| {
                             if s.report_open {
                                 3
@@ -626,7 +655,7 @@ impl App for PomodoroApp {
         }
         // 环境音：与视觉淡化同源 (from/to/fade), 300ms 增益包络;
         // 休息期 duck 沉降 (世界退远一步), 懒初始化 + 静默降级。
-        let (from, to, fade) = self.fader.frame(self.now, |t| FADE_EASING.eval(t));
+        let (from, to, fade) = self.fader.frame(self.now, FADE_EASING);
         let duck = match self.timer.phase() {
             Phase::Focus => 1.0,
             Phase::Break | Phase::LongBreak => ambient::BREAK_DUCK,
@@ -642,14 +671,15 @@ impl App for PomodoroApp {
         );
         self.ambient_player.apply(frame);
         // 场景动效：与音频同潮汐契约 — 运行全量，暂停 500ms 沉降 (视觉独立时长)。
-        self.motion_gain = self.motion_envelope.gain(self.timer.is_running(), self.now);
+        let motion_target = if self.timer.is_running() { 1.0 } else { 0.0 };
+        self.motion_gain = self.motion_envelope.value(self.now, motion_target);
         // 雨钟：雨丝定格可见 (2026-07-29 用户裁定：暂停显示雨丝，不随包络沉降);
         // 包络只推进下落时间 — 暂停 500ms 减速冻结，恢复 500ms 加速续走，无跳变。
         self.rain_clock += dt.as_secs_f32() * self.motion_gain;
     }
 
     fn background_frame(&self) -> Option<BackgroundFrame> {
-        let (from, to, fade) = self.fader.frame(self.now, |t| FADE_EASING.eval(t));
+        let (from, to, fade) = self.fader.frame(self.now, FADE_EASING);
         let rain = motion::rain_intensity(from, to, fade);
         let fire = motion::fire_intensity(from, to, fade, self.motion_gain);
         let sea = motion::sea_intensity(from, to, fade, self.motion_gain);
@@ -735,6 +765,13 @@ fn content_column(t: SceneTheme) -> impl widget::Widget {
         .child(Padding::all(t.spacing_xl(), Center::new(control_pill(t))))
 }
 
+/// 构建已在指定时刻触发的快捷键提示 (全新会话/首启路径：触发即标记已见)。
+fn triggered_cue(at: Duration) -> Cue {
+    let mut cue = Cue::new(CueTiming::default());
+    cue.trigger(at);
+    cue
+}
+
 /// 全屏 flash 叠加层：阶段流转时 accent 色脉冲衰减。
 /// 未激活时 alpha = 0, 完全透明 (无视觉影响); 激活时由 `progress()` 驱动 alpha。
 fn flash_overlay_widget() -> impl widget::Widget {
@@ -812,6 +849,11 @@ fn subtitle_text(
             ),
             Phase::Break | Phase::LongBreak => format!("{} · {scene_name}", phase.label()),
         }
+    };
+    let base = if !license::is_full() {
+        format!("{base} · 免费版")
+    } else {
+        base
     };
     if today_count >= 1 {
         format!("{base} · 今日 {today_count}")
@@ -898,8 +940,40 @@ fn control_pill(t: SceneTheme) -> impl widget::Widget {
                 // 面板关闭后焦点回锚点按钮 (按稳定 id, 见 focus_request)。
                 .child(ghost_button(t, "统计", Msg::ToggleStats).id("stats-button"))
                 .child(ghost_button(t, "报告", Msg::ToggleReport).id("report-button"))
-                .child(ghost_button(t, "设置", Msg::ToggleSettings).id("settings-button")),
+                .child(settings_button(t)),
         ))
+}
+
+/// 设置按钮：幽灵样式, 内容带更新角标槽位 (有新版时 accent 圆点)。
+///
+/// 角标常占槽位、只靠颜色显隐 —— 显隐零布局位移 (spec 约束 6);
+/// 圆点直径固定, 不随主题间距变化。
+fn settings_button(t: SceneTheme) -> Button {
+    Button::themed(
+        &t,
+        Row::new()
+            .gap(t.spacing_xs())
+            .cross_center()
+            .child(Text::new("设置").bind_color(|s: &PomodoroApp| s.palette().text_primary))
+            .child(
+                UiBox::new(Color::TRANSPARENT)
+                    .width(SETTINGS_BADGE_DIAMETER)
+                    .height(SETTINGS_BADGE_DIAMETER)
+                    .radius(SETTINGS_BADGE_DIAMETER / 2.0)
+                    .bind_color(|s: &PomodoroApp| {
+                        if update::current_hint().is_some() {
+                            s.palette().accent
+                        } else {
+                            Color::TRANSPARENT
+                        }
+                    }),
+            ),
+    )
+    .bind_color(|_: &PomodoroApp| Color::TRANSPARENT)
+    .bind_hover_color(|s: &PomodoroApp| s.palette().surface)
+    .bind_focus_color(|s: &PomodoroApp| s.palette().accent)
+    .on_click(|| Msg::ToggleSettings)
+    .id("settings-button")
 }
 
 /// 全局环境音开关按钮：文字随状态 (开/关), 颜色同步 (开 = accent 活动态，关 = 次级色弱化)。
@@ -946,53 +1020,184 @@ fn sound_setting_row(t: SceneTheme) -> impl widget::Widget {
         .child(Center::new(sound_toggle_button(t)))
 }
 
-/// 设置面板浮层：居中玻璃卡片，调整专注/短休/长休时长。
-fn settings_panel(t: SceneTheme) -> impl widget::Widget {
-    // 半透明遮罩 + 居中玻璃卡片
-    Stack::new().child(UiBox::new(t.scrim()).radius(0.0)).child(
-        Center::new(
+/// 设置面板行：版本状态 + (免费版时) 升级入口。
+///
+/// 右侧内容随授权/购买状态切换 (MultiPanel, 见 license::version_row):
+/// 完整版 ✓ / 免费版+解锁按钮 / 购买中… / 购买未完成+重试。
+/// 购买成功后行立即变「完整版 ✓」— 这就是购买反馈本身。
+fn version_setting_row(t: SceneTheme) -> impl widget::Widget {
+    Row::new()
+        .cross_stretch()
+        .gap(t.spacing_xs())
+        .child(Center::new(
+            Text::new("版本")
+                .font_size(t.font_size_body())
+                .bind_color(|s: &PomodoroApp| s.palette().text_secondary),
+        ))
+        // 与步进行的 [-] 占位对齐 (同 sound_setting_row)。
+        .child(
             UiBox::new(Color::TRANSPARENT)
-                .bind_color(|s: &PomodoroApp| s.palette().surface)
-                .radius(t.radius_lg())
-                .width(SETTINGS_CARD_WIDTH)
-                .child(Padding::new(
-                    Edges::all(t.spacing_xl()),
-                    Column::new()
-                        .gap(t.spacing_lg())
-                        .child(settings_header(t))
-                        .child(stepper_row(
-                            t,
-                            "专注时长",
-                            |s: &PomodoroApp| s.timer.config().focus_secs / 60,
-                            Msg::DecFocus,
-                            Msg::IncFocus,
-                        ))
-                        .child(stepper_row(
-                            t,
-                            "\u{3000}短休息",
-                            |s: &PomodoroApp| s.timer.config().break_secs / 60,
-                            Msg::DecBreak,
-                            Msg::IncBreak,
-                        ))
-                        .child(stepper_row(
-                            t,
-                            "\u{3000}长休息",
-                            |s: &PomodoroApp| s.timer.config().long_break_secs / 60,
-                            Msg::DecLongBreak,
-                            Msg::IncLongBreak,
-                        ))
-                        .child(sound_setting_row(t))
-                        .child(ghost_button(t, "重置计时", Msg::ResetConfig))
-                        .child(ghost_button(t, "问题反馈", Msg::OpenFeedback))
-                        .child(
-                            Text::new("变更在下一阶段生效")
-                                .font_size(t.font_size_small())
-                                .bind_color(|s: &PomodoroApp| s.palette().text_secondary),
-                        ),
-                )),
+                .width(STEPPER_MINUS_OFFSET)
+                .height(1.0),
         )
-        .fill_max(),
+        .child(Center::new(version_status_widget(t)))
+}
+
+/// 「版本」行右侧：更新提示 (最高优先) / 授权状态文案 (+ 免费版时的升级按钮)。
+fn version_status_widget(t: SceneTheme) -> impl widget::Widget {
+    MultiPanel::new()
+        // 面板 0: 有新版本 — 提示 + 更新动作 (spec 成功标准 2/3: 版本行让位给更新提示)
+        .child(
+            Row::new()
+                .gap(t.spacing_xs())
+                .cross_center()
+                .child(Center::new(
+                    Text::bind(|_: &PomodoroApp| {
+                        update::current_hint().map(|h| h.status).unwrap_or_default()
+                    })
+                    .font_size(t.font_size_body())
+                    .bind_color(|s: &PomodoroApp| s.palette().accent),
+                ))
+                .child(Center::new(update_button(t))),
+        )
+        // 面板 1: 有操作 — 状态文案 + 升级/重试按钮
+        // cross_center: 内层 Row 默认顶部对齐, 按钮比文案高会把文案顶偏;
+        // 显式垂直居中让文案与按钮对齐到行心 (与外层「版本」label 同中心)。
+        .child(
+            Row::new()
+                .gap(t.spacing_xs())
+                .cross_center()
+                .child(Center::new(
+                    Text::bind(|_: &PomodoroApp| license::version_row().status)
+                        .font_size(t.font_size_body())
+                        .bind_color(|s: &PomodoroApp| s.palette().text_secondary),
+                ))
+                .child(Center::new(upgrade_button(t))),
+        )
+        // 面板 2: 无操作 — 纯状态文案 (完整版用 accent 点亮, 购买中用次级色)
+        .child(Center::new(
+            Text::bind(|_: &PomodoroApp| license::version_row().status)
+                .font_size(t.font_size_body())
+                .bind_color(|s: &PomodoroApp| {
+                    if license::is_full() {
+                        s.palette().accent
+                    } else {
+                        s.palette().text_secondary
+                    }
+                }),
+        ))
+        .bind(|_: &PomodoroApp| {
+            version_panel_index(
+                update::current_hint().is_some(),
+                license::version_row().action.is_none(),
+            )
+        })
+}
+
+/// 「版本」行右侧面板选择 (纯函数): 更新提示 > 授权操作 > 纯状态。
+/// 返回值即 MultiPanel 子组件顺序 (0=更新行, 1=有操作, 2=纯状态) ——
+/// 索引与子组件顺序的耦合由此函数一处承担, 调换子组件顺序时同步改这里。
+fn version_panel_index(has_update: bool, license_action_is_none: bool) -> usize {
+    if has_update {
+        0 // 有新版: 版本行让位更新提示 (spec 成功标准 2/3)
+    } else if license_action_is_none {
+        2 // 完整版/购买中: 纯状态文案
+    } else {
+        1 // 免费版空闲/购买失败: 状态 + 升级/重试按钮
+    }
+}
+
+/// 「版本」行动作按钮：幽灵样式 + accent 绑定文案 (升级/更新共用)。
+fn version_action_button(
+    t: SceneTheme,
+    text: impl Fn(&PomodoroApp) -> String + 'static,
+    msg: Msg,
+) -> Button {
+    Button::themed(
+        &t,
+        Text::bind(text).bind_color(|s: &PomodoroApp| s.palette().accent),
     )
+    .bind_color(|_: &PomodoroApp| Color::TRANSPARENT)
+    .bind_hover_color(|s: &PomodoroApp| s.palette().surface)
+    .bind_focus_color(|s: &PomodoroApp| s.palette().accent)
+    .on_click(move || msg)
+}
+
+/// 升级按钮：幽灵样式, 文案随购买状态 (解锁完整版/重试), 点击发起购买。
+fn upgrade_button(t: SceneTheme) -> Button {
+    version_action_button(
+        t,
+        |_: &PomodoroApp| {
+            license::version_row()
+                .action
+                .unwrap_or_default()
+                .to_string()
+        },
+        Msg::Upgrade,
+    )
+}
+
+/// 更新按钮：幽灵样式, 文案按轨道 (前往下载/更新), 点击分派更新动作。
+fn update_button(t: SceneTheme) -> Button {
+    version_action_button(
+        t,
+        |_: &PomodoroApp| {
+            update::current_hint()
+                .map(|h| h.action)
+                .unwrap_or_default()
+                .to_string()
+        },
+        Msg::UpdateAction,
+    )
+}
+
+/// 设置面板浮层：danqing::Overlay 承载 scrim/居中/模态门控 (簇C 下沉)。
+fn settings_panel(t: SceneTheme) -> impl widget::Widget {
+    Overlay::themed(&t, settings_card(t)).bind_open(|s: &PomodoroApp| s.settings_open)
+}
+
+/// 设置面板卡片 (Overlay 内容槽)：居中玻璃卡片，调整专注/短休/长休时长。
+fn settings_card(t: SceneTheme) -> impl widget::Widget {
+    UiBox::new(Color::TRANSPARENT)
+        .bind_color(|s: &PomodoroApp| s.palette().surface)
+        .radius(t.radius_lg())
+        .width(SETTINGS_CARD_WIDTH)
+        .child(Padding::new(
+            Edges::all(t.spacing_xl()),
+            Column::new()
+                .gap(t.spacing_lg())
+                .child(settings_header(t))
+                .child(stepper_row(
+                    t,
+                    "专注时长",
+                    |s: &PomodoroApp| s.timer.config().focus_secs / 60,
+                    Msg::DecFocus,
+                    Msg::IncFocus,
+                ))
+                .child(stepper_row(
+                    t,
+                    "\u{3000}短休息",
+                    |s: &PomodoroApp| s.timer.config().break_secs / 60,
+                    Msg::DecBreak,
+                    Msg::IncBreak,
+                ))
+                .child(stepper_row(
+                    t,
+                    "\u{3000}长休息",
+                    |s: &PomodoroApp| s.timer.config().long_break_secs / 60,
+                    Msg::DecLongBreak,
+                    Msg::IncLongBreak,
+                ))
+                .child(sound_setting_row(t))
+                .child(version_setting_row(t))
+                .child(ghost_button(t, "重置计时", Msg::ResetConfig))
+                .child(ghost_button(t, "问题反馈", Msg::OpenFeedback))
+                .child(
+                    Text::new("变更在下一阶段生效")
+                        .font_size(t.font_size_small())
+                        .bind_color(|s: &PomodoroApp| s.palette().text_secondary),
+                ),
+        ))
 }
 
 /// 设置面板标题行："计时设置" + 固定间距 + 关闭按钮。
@@ -1054,41 +1259,41 @@ fn stepper_row(
         .child(Center::new(ghost_button(t, "+", inc_msg)))
 }
 
-/// 统计面板浮层：居中玻璃卡片，展示 今日 / 本周 / 累计 专注 + 导出按钮。
+/// 统计面板浮层：danqing::Overlay 承载 scrim/居中/模态门控 (簇C 下沉)。
 fn stats_panel(t: SceneTheme) -> impl widget::Widget {
-    Stack::new().child(UiBox::new(t.scrim()).radius(0.0)).child(
-        Center::new(
-            UiBox::new(Color::TRANSPARENT)
-                .bind_color(|s: &PomodoroApp| s.palette().surface)
-                .radius(t.radius_lg())
-                .width(SETTINGS_CARD_WIDTH)
-                .child(Padding::new(
-                    Edges::all(t.spacing_xl()),
-                    Column::new()
-                        .gap(t.spacing_lg())
-                        .child(stats_header(t))
-                        .child(stat_row(t, "今日", |s| format!("{} 次", s.today_count)))
-                        .child(stat_row(t, "近 7 天", |s| {
-                            let (count, secs) = s.history.week_stats(current_wall_secs());
-                            format!("{count} 次 · {}", format_duration(secs))
-                        }))
-                        .child(stat_row(t, "累计", |s| {
-                            let (count, secs) = s.history.total_stats();
-                            format!("{count} 次 · {}", format_duration(secs))
-                        }))
-                        .child(export_actions(t))
-                        .child(export_notice_row(t)),
-                )),
-        )
-        .fill_max(),
-    )
+    Overlay::themed(&t, stats_card(t)).bind_open(|s: &PomodoroApp| s.stats_open)
+}
+
+/// 统计面板卡片 (Overlay 内容槽)：居中玻璃卡片，展示 今日 / 本周 / 累计 专注 + 导出按钮。
+fn stats_card(t: SceneTheme) -> impl widget::Widget {
+    UiBox::new(Color::TRANSPARENT)
+        .bind_color(|s: &PomodoroApp| s.palette().surface)
+        .radius(t.radius_lg())
+        .width(SETTINGS_CARD_WIDTH)
+        .child(Padding::new(
+            Edges::all(t.spacing_xl()),
+            Column::new()
+                .gap(t.spacing_lg())
+                .child(stats_header(t))
+                .child(stat_row(t, "今日", |s| format!("{} 次", s.today_count)))
+                .child(stat_row(t, "近 7 天", |s| {
+                    let (count, secs) = s.history.week_stats(current_wall_secs());
+                    format!("{count} 次 · {}", format_duration(secs))
+                }))
+                .child(stat_row(t, "累计", |s| {
+                    let (count, secs) = s.history.total_stats();
+                    format!("{count} 次 · {}", format_duration(secs))
+                }))
+                .child(export_actions(t))
+                .child(export_notice_row(t)),
+        ))
 }
 
 /// 统计面板导出操作区：「导出 CSV」按钮 + (已导出过时)「打开所在目录」按钮。
-/// 用 Switcher 按 `export_file_exists` 切换：未导出过只显示导出按钮，
+/// 用 MultiPanel 按 `export_file_exists` 切换：未导出过只显示导出按钮，
 /// 已导出过并排显示两个 (导出 + 打开所在目录), 面板高度恒定。
 fn export_actions(t: SceneTheme) -> impl widget::Widget {
-    Switcher::new()
+    MultiPanel::new()
         .child(ghost_button(t, "导出 CSV", Msg::ExportCsv))
         .child(
             Row::new()
@@ -1172,42 +1377,7 @@ fn format_duration(secs: u64) -> String {
 
 /// 导出 CSV 的固定路径 (OS 配置目录 + danqing/focus-history.csv)。
 fn export_csv_path() -> Option<std::path::PathBuf> {
-    dirs::config_dir().map(|d| d.join("danqing").join("focus-history.csv"))
-}
-
-/// 在系统文件管理器中显示导出文件 (回答「导到哪了」)。
-/// Win: Explorer 定位文件; mac: Finder 定位; 其它平台：打开所在目录。
-/// 导出本身已成功，此处失败只记日志，不影响导出结果。
-fn reveal_in_file_manager(path: &std::path::Path) {
-    if let Err(err) = reveal_attempt(path) {
-        log::warn!("在文件管理器中显示导出文件失败：{err}");
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn reveal_attempt(path: &std::path::Path) -> std::io::Result<std::process::Child> {
-    std::process::Command::new("explorer")
-        .arg(format!("/select,{}", path.display()))
-        .spawn()
-}
-
-#[cfg(target_os = "macos")]
-fn reveal_attempt(path: &std::path::Path) -> std::io::Result<std::process::Child> {
-    std::process::Command::new("open")
-        .arg("-R")
-        .arg(path)
-        .spawn()
-}
-
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
-fn reveal_attempt(path: &std::path::Path) -> std::io::Result<std::process::Child> {
-    let Some(dir) = path.parent() else {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "导出文件无父目录",
-        ));
-    };
-    std::process::Command::new("xdg-open").arg(dir).spawn()
+    danqing::persist::config_dir("danqing").map(|d| d.join("focus-history.csv"))
 }
 
 /// 打开 GitHub Issues 反馈页面：预填标题前缀 + 应用版本 + 操作系统信息。
@@ -1234,41 +1404,41 @@ fn current_year() -> u32 {
     chrono::Local::now().year() as u32
 }
 
-/// 年度报告面板浮层：居中玻璃卡片，深度洞察
-/// (当前年汇总 + 场景分布 + 近 12 月趋势)。
+/// 年度报告面板浮层：danqing::Overlay 承载 scrim/居中/模态门控 (簇C 下沉)。
 fn report_panel(t: SceneTheme) -> impl widget::Widget {
-    Stack::new().child(UiBox::new(t.scrim()).radius(0.0)).child(
-        Center::new(
-            UiBox::new(Color::TRANSPARENT)
-                .bind_color(|s: &PomodoroApp| s.palette().surface)
-                .radius(t.radius_lg())
-                .width(REPORT_CARD_WIDTH)
-                .child(Padding::new(
-                    Edges::all(t.spacing_xl()),
-                    Column::new()
-                        .gap(t.spacing_lg())
-                        .child(report_header(t))
-                        .child(section_label(t, "本年"))
-                        .child(stat_row(t, "专注时长", |s| {
-                            format_duration(s.history.year_summary(current_year()).total_secs)
-                        }))
-                        .child(stat_row(t, "轮次", |s| {
-                            format!(
-                                "{} 次",
-                                s.history.year_summary(current_year()).session_count
-                            )
-                        }))
-                        .child(stat_row(t, "活跃天数", |s| {
-                            format!("{} 天", s.history.year_summary(current_year()).active_days)
-                        }))
-                        .child(section_label(t, "场景分布"))
-                        .child(scene_distribution_rows(t))
-                        .child(section_label(t, "近 12 月趋势"))
-                        .child(month_trend_rows(t)),
-                )),
-        )
-        .fill_max(),
-    )
+    Overlay::themed(&t, report_card(t)).bind_open(|s: &PomodoroApp| s.report_open)
+}
+
+/// 年度报告面板卡片 (Overlay 内容槽)：居中玻璃卡片，深度洞察
+/// (当前年汇总 + 场景分布 + 近 12 月趋势)。
+fn report_card(t: SceneTheme) -> impl widget::Widget {
+    UiBox::new(Color::TRANSPARENT)
+        .bind_color(|s: &PomodoroApp| s.palette().surface)
+        .radius(t.radius_lg())
+        .width(REPORT_CARD_WIDTH)
+        .child(Padding::new(
+            Edges::all(t.spacing_xl()),
+            Column::new()
+                .gap(t.spacing_lg())
+                .child(report_header(t))
+                .child(section_label(t, "本年"))
+                .child(stat_row(t, "专注时长", |s| {
+                    format_duration(s.history.year_summary(current_year()).total_secs)
+                }))
+                .child(stat_row(t, "轮次", |s| {
+                    format!(
+                        "{} 次",
+                        s.history.year_summary(current_year()).session_count
+                    )
+                }))
+                .child(stat_row(t, "活跃天数", |s| {
+                    format!("{} 天", s.history.year_summary(current_year()).active_days)
+                }))
+                .child(section_label(t, "场景分布"))
+                .child(scene_distribution_rows(t))
+                .child(section_label(t, "近 12 月趋势"))
+                .child(month_trend_rows(t)),
+        ))
 }
 
 /// 报告面板分区标题。
@@ -1359,6 +1529,8 @@ fn trend_row(t: SceneTheme, idx: usize) -> impl widget::Widget {
 
 fn main() -> ExitCode {
     danqing::log::init_log();
+    license::init();
+    update::spawn_check();
 
     match run() {
         Ok(()) => ExitCode::SUCCESS,
@@ -1412,24 +1584,33 @@ fn run() -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
+    /// 免费版副标后缀 (feature-gated, 测试用)。
+    #[cfg(not(feature = "full"))]
+    const FREE_SUFFIX: &str = " · 免费版";
+    #[cfg(feature = "full")]
+    const FREE_SUFFIX: &str = "";
+
     #[test]
     fn subtitle_running_focus_shows_round() {
         assert_eq!(
             subtitle_text(true, Phase::Focus, "篝火", 1, 0),
-            "专注 · 篝火 · 第 2/4 轮"
+            format!("专注 · 篝火 · 第 2/4 轮{FREE_SUFFIX}")
         );
         assert_eq!(
             subtitle_text(true, Phase::Focus, "海", 0, 0),
-            "专注 · 海 · 第 1/4 轮"
+            format!("专注 · 海 · 第 1/4 轮{FREE_SUFFIX}")
         );
     }
 
     #[test]
     fn subtitle_running_break_and_long_break_hide_round() {
-        assert_eq!(subtitle_text(true, Phase::Break, "海", 2, 0), "休息 · 海");
+        assert_eq!(
+            subtitle_text(true, Phase::Break, "海", 2, 0),
+            format!("休息 · 海{FREE_SUFFIX}")
+        );
         assert_eq!(
             subtitle_text(true, Phase::LongBreak, "山", 0, 0),
-            "长休息 · 山"
+            format!("长休息 · 山{FREE_SUFFIX}")
         );
     }
 
@@ -1437,11 +1618,11 @@ mod tests {
     fn subtitle_paused_keeps_paused_wording() {
         assert_eq!(
             subtitle_text(false, Phase::Focus, "雨", 3, 0),
-            "⏸ 已暂停 · 雨"
+            format!("⏸ 已暂停 · 雨{FREE_SUFFIX}")
         );
         assert_eq!(
             subtitle_text(false, Phase::LongBreak, "森林", 0, 0),
-            "⏸ 已暂停 · 森林"
+            format!("⏸ 已暂停 · 森林{FREE_SUFFIX}")
         );
     }
 
@@ -1449,15 +1630,15 @@ mod tests {
     fn subtitle_appends_today_count_when_positive() {
         assert_eq!(
             subtitle_text(true, Phase::Focus, "篝火", 1, 3),
-            "专注 · 篝火 · 第 2/4 轮 · 今日 3"
+            format!("专注 · 篝火 · 第 2/4 轮{FREE_SUFFIX} · 今日 3")
         );
         assert_eq!(
             subtitle_text(true, Phase::Break, "海", 2, 1),
-            "休息 · 海 · 今日 1"
+            format!("休息 · 海{FREE_SUFFIX} · 今日 1")
         );
         assert_eq!(
             subtitle_text(false, Phase::Focus, "雨", 3, 2),
-            "⏸ 已暂停 · 雨 · 今日 2"
+            format!("⏸ 已暂停 · 雨{FREE_SUFFIX} · 今日 2")
         );
     }
 
@@ -2166,7 +2347,9 @@ mod tests {
     }
 
     // === 统计面板 (2026-08-01) ===
+    // 免费版点击统计/报告会打开商店页而非切换面板, 以下测试仅完整版适用。
 
+    #[cfg(feature = "full")]
     #[test]
     fn toggle_stats_flips_state() {
         let mut app = PomodoroApp::new_default();
@@ -2177,6 +2360,7 @@ mod tests {
         assert!(!app.stats_open);
     }
 
+    #[cfg(feature = "full")]
     #[test]
     fn stats_and_settings_mutually_exclusive() {
         let mut app = PomodoroApp::new_default();
@@ -2192,6 +2376,7 @@ mod tests {
 
     // === 年度报告面板 (2026-08-01 里程碑 1 Task E) ===
 
+    #[cfg(feature = "full")]
     #[test]
     fn toggle_report_flips_state() {
         let mut app = PomodoroApp::new_default();
@@ -2202,6 +2387,7 @@ mod tests {
         assert!(!app.report_open);
     }
 
+    #[cfg(feature = "full")]
     #[test]
     fn report_settings_stats_mutually_exclusive() {
         let mut app = PomodoroApp::new_default();
@@ -2218,6 +2404,7 @@ mod tests {
         assert!(!app.report_open, "打开设置应关闭报告");
     }
 
+    #[cfg(feature = "full")]
     #[test]
     fn escape_closes_report() {
         let mut app = PomodoroApp::new_default();
@@ -2318,6 +2505,7 @@ mod tests {
 
     // === 面板关闭后焦点回归 (2026-08-01) ===
 
+    #[cfg(feature = "full")]
     #[test]
     fn closing_stats_panel_requests_focus_restore_to_anchor() {
         let mut app = fresh_app_with_empty_history();
@@ -2343,6 +2531,7 @@ mod tests {
         assert_eq!(app.focus_request(), Some("settings-button"));
     }
 
+    #[cfg(feature = "full")]
     #[test]
     fn escape_close_requests_focus_restore() {
         // Escape 关闭路径同样应请求焦点回归 (焦点为空时由应用层关闭面板)。
@@ -2380,6 +2569,59 @@ mod tests {
             size.height < 100.0,
             "步进行高度应随内容 (控件高), 而非窗体高：{}",
             size.height
+        );
+    }
+
+    #[test]
+    fn version_row_height_tracks_content_not_window() {
+        // 与步进行同款防护: 版本行占位 UiBox 有显式高度, 行高应随内容。
+        let t = test_theme();
+        let mut row = danqing::widget::node(version_setting_row(t));
+        let mut texts = danqing::TextBatch::new();
+        let size = row.layout(
+            danqing::Constraints::loose(Size::new(960.0, 640.0)),
+            &mut texts,
+        );
+        assert!(
+            size.height < 100.0,
+            "版本行高度应随内容 (控件高), 而非窗体高：{}",
+            size.height
+        );
+    }
+
+    #[test]
+    fn version_panel_index_prioritizes_update_hint() {
+        // 面板索引 = MultiPanel 子组件顺序 (0=更新行, 1=有操作, 2=纯状态)。
+        assert_eq!(version_panel_index(true, true), 0);
+        // 更新与升级入口同时存在时更新优先 (spec 成功标准 2/3)。
+        assert_eq!(version_panel_index(true, false), 0);
+        assert_eq!(version_panel_index(false, false), 1);
+        assert_eq!(version_panel_index(false, true), 2);
+    }
+
+    #[test]
+    fn settings_button_badge_slot_does_not_inflate_height() {
+        // 角标槽位常驻: 带角标的设置按钮与裸幽灵按钮同高 (角标不撑高),
+        // 且宽度恒大于裸按钮 (槽位预留 = 角标显隐零位移的前提, spec 约束 6)。
+        let t = test_theme();
+        let mut texts = danqing::TextBatch::new();
+        let mut badge_btn = danqing::widget::node(settings_button(t));
+        let badge_size = badge_btn.layout(
+            danqing::Constraints::loose(Size::new(960.0, 640.0)),
+            &mut texts,
+        );
+        let mut texts_plain = danqing::TextBatch::new();
+        let mut plain_btn = danqing::widget::node(ghost_button(t, "设置", Msg::ToggleSettings));
+        let plain_size = plain_btn.layout(
+            danqing::Constraints::loose(Size::new(960.0, 640.0)),
+            &mut texts_plain,
+        );
+        assert_eq!(badge_size.height, plain_size.height, "角标不得撑高设置按钮");
+        assert!(
+            badge_size.width > plain_size.width,
+            "角标槽位应常驻预留宽度: {} 应大于 {}",
+            badge_size.width,
+            plain_size.width
         );
     }
 
