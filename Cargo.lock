@@ -701,7 +701,7 @@ source = "git+https://github.com/14uncle/danqing-encoding#0731edcbe158463b0247ea
 
 [[package]]
 name = "danqing-pomodoro"
-version = "0.2.8"
+version = "0.2.9"
 dependencies = [
  "anyhow",
  "chrono",

@@ -21,8 +21,12 @@
   CurrentUser\TrustedPeople 加了也 0x800B0109
 - **本机 powershell 的 Cert: PSDrive 不可用** (Security 模块加载失败, 疑与 env 注入有关):
   New-SelfSignedCertificate 不可用, 用 .NET CertificateRequest.CreateSelfSigned 替代
-- **MSIX 下 exe 旁的 logs/ 写不进** (WindowsApps 只读): 框架 log.rs 静默降级,
-  商店版无日志 —— danqing 侧待办: 日志目录回退 %APPDATA%
+- **MSIX 下 exe 旁的 logs/ 写不进** (WindowsApps 只读) —— 框架三级回退已兜住:
+  ① exe 同级 `logs/` ② `%LOCALAPPDATA%\<exe 名>\logs` (**商店版靠这级**) ③ CWD `logs/`。
+  第②级 2026-09-13 补进框架 (danqing `db050de`), 本机实测商店版日志正常落包私有目录。
+  (本条原记「danqing 侧待办: 日志目录回退 %APPDATA%」—— **已结**; 实际落点是
+  `%LOCALAPPDATA%` 不是 `%APPDATA%`)。
+  **验证手法**: 本机第①级常写成功、根本走不到② —— 用同名文件占住 `logs` 位置即可逼出降级路径
 - **PowerShell 的 X509Certificate2 构造器对 byte[] 绑定有怪癖**:
   `New-Object X509Certificate2($cert.Export(...))` 匹配不到重载; 直接 Add($cert) 即可
 - **explorer.exe 启动 App 返回码恒 1**: 不要用 `&&` 串后续命令

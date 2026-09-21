@@ -35,7 +35,7 @@ if (-not $PSBoundParameters.ContainsKey('Version')) {
     }
 }
 
-$ReleaseDir = Join-Path $RepoRoot "..\.cargo-target\release"  # shared farm target (see .cargo/config.toml)
+$ReleaseDir = Join-Path $RepoRoot "target\release"  # 各仓独立 target/ (共享 .cargo-target 已于 2026-09-10 去除)
 
 # Locate Python for icon injection
 $Py = $null
