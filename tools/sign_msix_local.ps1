@@ -13,7 +13,9 @@
 # 注意: 仅用于本地测试; 提交商店的包无需签名 (商店收录时自动重签)。
 
 param(
-    [string]$MsixPath = "..\release-archives\pomodoro\msix\danqing-pomodoro-store-v0.2.0-x64.msix",
+    # 留空 = 按 Cargo.toml 版本拼包名 (别再钉死默认路径: 陈旧文件名是「拿错包」
+    # 陷阱, 2026-09-22 默认值 v0.2.0 让签名+安装实际打在了陈年旧包上)。
+    [string]$MsixPath = "",
     [string]$PublisherCN = "CN=5F2A7EA5-3366-4B8A-8C0D-3BE22575711A",
     [string]$PfxPassword = "sideload"
 )
@@ -21,6 +23,19 @@ param(
 $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path "$PSScriptRoot\.."
 $Signtool = Join-Path $RepoRoot "tools\sdk-tools\bin\10.0.22621.0\x64\signtool.exe"
+if (-not $PSBoundParameters.ContainsKey('MsixPath') -or $MsixPath -eq "") {
+    $CargoToml = Join-Path $RepoRoot "Cargo.toml"
+    $Match = [regex]::Match(
+        (Get-Content $CargoToml -Raw),
+        '(?s)\[package\][^[]*?version\s*=\s*"([^"]+)"'
+    )
+    if (-not $Match.Success) {
+        Write-Host "ERROR: Cargo.toml [package] section has no version (或显式传 -MsixPath)"
+        exit 1
+    }
+    $MsixPath = "..\release-archives\pomodoro\msix\danqing-pomodoro-store-v$($Match.Groups[1].Value)-x64.msix"
+    Write-Host "MsixPath from Cargo.toml version: $MsixPath"
+}
 $Msix = Join-Path $RepoRoot $MsixPath
 $PfxPath = Join-Path $RepoRoot "..\release-archives\pomodoro\msix\sideload-signing.pfx"
 

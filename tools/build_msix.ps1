@@ -11,7 +11,9 @@
 #   - Run python tools/gen_store_assets.py (generates Store icons)
 
 param(
-    [string]$Version = "0.2.0",
+    # 留空 = 从 Cargo.toml [package].version 自动读取 (别再钉死默认值: 陈旧版本号
+    # 是「拿错包」陷阱, 2026-09-22 sign_msix_local 同款坑实签了陈年 v0.2.0 旧包)。
+    [string]$Version = "",
     [string]$StageDir = "..\release-archives\pomodoro\stage-store",
     [string]$OutDir = "..\release-archives\pomodoro\msix",
     # Partner Center 产品标识 (2026-09-01 回填): 应用和游戏 -> 产品标识 页
@@ -24,6 +26,21 @@ param(
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path "$PSScriptRoot\.."
+
+if (-not $PSBoundParameters.ContainsKey('Version')) {
+    $CargoToml = Join-Path $RepoRoot "Cargo.toml"
+    $Match = [regex]::Match(
+        (Get-Content $CargoToml -Raw),
+        '(?s)\[package\][^[]*?version\s*=\s*"([^"]+)"'
+    )
+    if ($Match.Success) {
+        $Version = $Match.Groups[1].Value
+        Write-Host "Version from Cargo.toml: $Version"
+    } else {
+        Write-Host "ERROR: -Version not provided and Cargo.toml [package] section has no version"
+        exit 1
+    }
+}
 
 # Locate makeappx.exe
 $MakeAppx = Join-Path $RepoRoot "tools\sdk-tools\bin\10.0.22621.0\x64\makeappx.exe"
